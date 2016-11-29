@@ -1,0 +1,53 @@
+---
+title: "Sea Level Pressure Change"
+author: "Nick Gauthier"
+date: "November 28, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(raster)
+library(rasterVis)
+library(tidyverse)
+```
+
+
+Get present day mslp observations from reanalysis data.
+
+```{r}
+present <- brick('~/gdrive/Data/ECMWF/eu/msl_ecmwf_eu.tif') %>% mean
+levelplot(present, margin = F)
+```
+
+
+Now get mid holocene estimates.
+```{r}
+mh <- brick('~/gdrive/Data/PMIP3 Data/MH/Models/ccsm4/psl_Aclim_CCSM4_midHolocene_r1i1p1_100001-130012-clim.nc') %>%
+  rotate %>%
+  resample(present) %>%
+  mean %>%
+  mask(present)
+
+levelplot(mh, margin = F)
+```
+
+Now compare the two
+
+```{r}
+c(present, mh) %>% brick %>% levelplot(margin = F)
+```
+
+```{r}
+levelplot(present - mh, par.settings = RdBuTheme(), margin = F, at = seq(-600,600,50))
+```
+
+So mean sea level pressure over Spain has decreased by about 300 (hpa?) in the past 6000 years, that's about a 0.3% decrease from present-day values
+
+```{r}
+levelplot((present - mh)*100/mh, par.settings = RdBuTheme(), margin = F, at = seq(-.6,.6,.05))
+```
+
