@@ -99,7 +99,7 @@ Note that the sediment packets at depth are decaying with time, just at a rate s
 ## Numerical integration
 Maybe euler's method is introducing some errors, try a more advanced ODE solver? Still in progress ...
 
-Redifine the function to be deSolve compataible.
+Redefine the function to be deSolve compataible.
 ```{r}
 library(deSolve)
 library(phaseR)
@@ -127,3 +127,23 @@ nuclide.flow <- flowField(be10, x.lim = c(0,10), y.lim = c(0,10),
 nuclide.null <- nullclines(be10, x.lim = c(0,10), y.lim = c(0,10), 
                            system = 'one.dim', points = 200, parameters = 5)
 ```
+
+## Working in GRASS
+Use the rgrass7 library to try doing the same thing in GRASS
+```{r}
+library(rgrass7)
+initGRASS(gisBase = "/usr/lib/grass72", home = tempdir(), 
+          SG = as(rast, 'SpatialGrid'),
+          remove_GISRC = T, override = T)
+```
+
+Use r.mapcalc instead of the r function
+```{r}
+doGRASS('r3.mapcalc', flags = c('overwrite'), expression = expr, )
+execGRASS('r3.mapcalc', echoCmd = T)
+```
+```{r}
+expr <- paste0(c('test_out = ', P_0, ' * ', 'exp(-1 * z() *', L, ' / ', p,') - N * ', ltlambda), collapse = '')
+expr
+```
+need to work on the z() command
