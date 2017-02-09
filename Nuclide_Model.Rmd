@@ -139,7 +139,7 @@ initGRASS(gisBase = "/usr/lib/grass72", home = tempdir(),
 
 Use r.mapcalc instead of the r function
 ```{r}
-doGRASS('r3.mapcalc', flags = c('overwrite'), expression = expr, )
+doGRASS('r3.mapcalc', flags = c('overwrite'), expression = expr)
 execGRASS('r3.mapcalc', echoCmd = T)
 ```
 ```{r}
@@ -147,3 +147,35 @@ expr <- paste0(c('test_out = ', P_0, ' * ', 'exp(-1 * z() *', L, ' / ', p,') - N
 expr
 ```
 need to work on the z() command
+no, actually just use a tibble in r to store the stratigraphy
+
+extra grass commands
+need to find the top and bottom values of the dem and set them as the t and b bounds in the 3d region first
+g.region t=1305 b=540 res=10 tbres=.1                                           
+
+
+r.to.rast3elev -l --overwrite input=nuclide_init@PERMANENT elevation=DEM output=nuclide_3d
+make a 3d raster from a dem and a data, filling under bounds
+
+
+Run r.watershed to calculate drainage direction map.
+```{r}
+doGRASS('r.watershed', flags = c('overwrite'), elevation = dem, drainage = dir) 
+```
+
+
+Select a point
+
+for each time step:
+  if erosion rate is positive:
+    subtract that depth from nuclide profile
+  if deposition rate is positive:
+    get drainage direction map
+    calculate watershed at that point using r.water.outlet
+    get all the cells in that watershed
+    add up the nucldie enrichment of all the cells that eroded in the watershed, average based on the depth of erosion
+    add that value of nuclide in the depth of deposition  at that area.
+
+                             
+
+r.water.outlet --overwrite input=draindir_45@PERMANENT output=basin_temp coordinates=724673.750147,4284260.05826
