@@ -18,6 +18,8 @@ L = 160 	# absorption mean-free path (attentuation length)  [g/cm2]
 p = 2.6 	# density of overburden [ g/cm3]
 
 
+# calculate topo shielding using r.skyview
+r.skyview input=DEM output=shielding ndir=16
 
 for N, z in :
     delta = P_0 * np.exp(-z * L / p) - N * ltlambda
