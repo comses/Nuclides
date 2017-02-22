@@ -161,6 +161,38 @@ for idx, row in layers.iterrows(): # run a loop through the stratagraphic data t
 
 #loop is done, make some figs!
 
+
+
+#loop through the data to make a final proxy count
+grass.message("Accumulating proxy-data by depth increments...")
+proxylist = [] # set up a list to contain results
+for idx, row in layers.iterrows():
+    if row['Delta'] > 0: # Deposition occured, so accumulate proxies and depth
+        numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to add
+        for depth in range(numdepths): # now add the correct proportion of proxy to each interval
+            proxylist.append([row['InSitu Grass Phytoliths']/numdepths, row['Scaled Basin-Average Grass Phytoliths']/numdepths, row['InSitu Charcoal']/numdepths, row['Scaled Basin-Average Charcoal']/numdepths, row['Artifacts']/numdepths])
+    elif row['Delta'] < 0: # Erosion occured, so remove proxies and depth
+        numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to remove
+        for depth in range(abs(numdepths)): # now remove the correct number of intervals, including all their proxy data
+            try:
+                proxylist.pop()
+            except(IndexError):
+                pass
+    else: # no change happened, so pass on by
+        pass
+    
+for idx, i in enumerate(proxylist):
+    i.append((idx+1)*-1*baseinterval) # add cumulative depth intervals
+proxyframe = pd.DataFrame(np.array(proxylist)) # convert to dataframe via np array
+labels = ["Grass Phyt, insitu", "Grass Phyt, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
+proxyframe.columns = labels # add column labels to proxyframe
+proxyframe.to_csv("%s_raw_proxies.csv" % outprefix) # save out the raw proxies dataframe to csv file
+
+
+
+
+#### plots
+
 #make stacked bar plot
 grass.message("Making temporal stratigraphic plot...")
 plt.ioff() # explicitly set interactive plotting off
@@ -190,30 +222,6 @@ plt.savefig("%s_stratigraphy_stackedbar.png" % outprefix, dpi=300)
 plt.close()
 mbsstrat = (stratigraphy - stratigraphy.ix[:,stratum][RunLength]) # NOW change the stratigraphy to depth below surface, 
 mbsstrat.T.to_csv("%s_stratigraphy.csv" % outprefix) # transpose, and save it out to a file
-
-#loop through the data to make a final proxy count
-grass.message("Accumulating proxy-data by depth increments...")
-proxylist = [] # set up a list to contain results
-for idx, row in layers.iterrows():
-    if row['Delta'] > 0: # Deposition occured, so accumulate proxies and depth
-        numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to add
-        for depth in range(numdepths): # now add the correct proportion of proxy to each interval
-            proxylist.append([row['InSitu Grass Phytoliths']/numdepths, row['Scaled Basin-Average Grass Phytoliths']/numdepths, row['InSitu Charcoal']/numdepths, row['Scaled Basin-Average Charcoal']/numdepths, row['Artifacts']/numdepths])
-    elif row['Delta'] < 0: # Erosion occured, so remove proxies and depth
-        numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to remove
-        for depth in range(abs(numdepths)): # now remove the correct number of intervals, including all their proxy data
-            try:
-                proxylist.pop()
-            except(IndexError):
-                pass
-    else: # no change happened, so pass on by
-        pass
-for idx, i in enumerate(proxylist):
-    i.append((idx+1)*-1*baseinterval) # add cumulative depth intervals
-proxyframe = pd.DataFrame(np.array(proxylist)) # convert to dataframe via np array
-labels = ["Grass Phyt, insitu", "Grass Phyt, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
-proxyframe.columns = labels # add column labels to proxyframe
-proxyframe.to_csv("%s_raw_proxies.csv" % outprefix) # save out the raw proxies dataframe to csv file
 
 grass.message("Creating proxy depth plot...")
 accumprox = proxyframe.groupby(np.arange(len(proxyframe))//dispinterval).sum() # aggregate data to the binned display interval (for the plot)
