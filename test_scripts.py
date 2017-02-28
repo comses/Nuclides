@@ -3,7 +3,8 @@ try:
 except:
     exit("You must have GRASS GIS installed, and be in a GRASS session to run this script")
 
-
+grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'RASTER3D_MASK')                         
+grass.run_command('r.mask', flags = 'r')
 coor = '725763.609242,4284801.3547' # "727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
 
 #get list of elevation maps
@@ -37,6 +38,8 @@ grass.mapcalc('two = 2', overwrite = True)
 
 # make maps of the minimum and maximum elevations for the entire simulation span
 grass.run_command('r.series', input = elevmaps, output = 'min_rast,max_rast', method = 'minimum,maximum', overwrite = True)
+grass.mapcalc('min_rast = int(min_rast)', overwrite = True) # floor
+grass.mapcalc('max_rast = int(max_rast) + 1', overwrite = True) # ceiling
 
 #make a 3d raster for the max volume to make a mask
 grass.run_command('r.to.rast3elev', flags = 'l', input = 'one,two', elevation = 'max_rast,min_rast', output = 'init_3d', overwrite = True)
@@ -53,8 +56,11 @@ grass.run_command('g.region', tbres = .01)
 
 # now make high resolution raster mask for the initial elevation surface, masked to 3d mask
 grass.mapcalc('init = 1', overwrite=True)
-grass.run_command('r.to.rast3elev', flags = 'l', input = 'init', elevation = elevmaps[0], output = 'vol_test', overwrite = True)
-
+grass.run_command('r.to.rast3elev', flags = 'lm', input = 'init', elevation = elevmaps[0], output = 'vol_test', overwrite = True)
+#create a dummy map that has the surface elevation for all cells
+grass.run_command('r.to.rast3elev', flags = 'lm', input = elevmaps[0], elevation = elevmaps[0], output = 'elev3d', overwrite = True)
+# make a depth map
+grass.mapcalc3d('depth3d = elev3d - z()', overwrite = True)
 
 # apply in situ be10 formula
 # Setup parameters
@@ -63,9 +69,10 @@ ltlambda = np.log(2) / 1.5e6 # decay constant
 L = 160 	# absorption mean-free path (attentuation length)  [g/cm2]   
 p = 2.6 	# density of overburden [ g/cm3]
 
+#create a dummy map that has the surface elevation for all cells
 
-grass.mapcalc3d(P_0 * np.exp(-z * L / p) - N * ltlambda
-str(P_0) + ' * exp(-' + elevmaps[0] + ' - z() * '+ str(L / p) + ') - vol_test * ' + str(ltlambda)
+expr = 'vol_test2 = ' + str(P_0) + ' * exp( -1 * depth3d * '+ str(L / p) + ') - vol_test * ' + str(ltlambda)
+grass.mapcalc3d(expr, overwrite = True)
 
 # now let's try time step 2
 
