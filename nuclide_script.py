@@ -45,20 +45,32 @@ for elev, ed, soildepth in zip(elevmaps, edmaps,soildepthmaps):
     grass.run_command('r.mask', flags = 'r')
 
 
-np.savetxt("np_map.csv", map, delimiter=",")
+#np.savetxt("np_map.csv", map, delimiter=",")
 
 
-#map_int = (map * 100).astype(int)
-map_int = (map * 1).astype(int)#.astype(np.object)
+map_int = (map * 100).astype(int)
+map_int = (map * 1).astype(int)
+init = 1
+
+
+make_column = np.vectorize(lambda x: [init] * x, otypes=[np.ndarray])
+
+make_column(4)
+make_column(np.array([[4,5],[1,2]]))
+soil_columns = make_column(map_int)
+
+soil_columns[600,200]
+
+
 print(map_int)
 
+[init] * np.array([4,5])
 
 soil_columns = np.empty(map.shape, dtype = np.object)
 soil_columns[...] = [[] for _ in len(soil_columns)]
 
 
 
-init = 1
 for x,y in np.nditer([map_int, None], flags = ['refs_ok']):
     y[...] = [init for i in range(x)]
     #y = [init for i in range(x)]
@@ -66,69 +78,13 @@ for x,y in np.nditer([map_int, None], flags = ['refs_ok']):
 
 soil_columns[600,200]
 
-plt.imshow(map)
- 
-grass.run_command('r.series', input = edbinmaps, output = 'ED_sum', method = 'sum', overwrite = True)
+soil_columns.shape
+len([4,5,6])
 
+len_vect = np.vectorize(len)
+len_vect(soil_columns)
 
-#generate base flow accumulation and direction maps from the DEMs in the list
-n = 0
-basinmaps = []
-for elev in elevmaps:
-    n += 1
-    grass.run_command("r.watershed", quiet=True, overwrite=True, elevation=elev, drainage="Temporary_fldr")
-    # delineate the upslope catchment basin
-    basinmap = "Temporary_catchment_basin_%s" % str(n).zfill(4)
-    grass.run_command("r.water.outlet", quiet=True, overwrite=True, input="Temporary_fldr", output=basinmap, coordinates=coor)
-    basinmaps.append(basinmap)
-
-
-# find the lowest and highest elevations thru the simulation, and use to set the upper and lower boundaries of the region
-elev_stats = grass.parse_command('r.univar', map = elevmaps, flags = 'g')
-#3d region
-grass.run_command('g.region', res = 10, res3 = 10, b = np.floor(float(elev_stats['min'])), t = np.ceil(float(elev_stats['max'])), tbres = 1)
-
-# mask to basin
-grass.run_command('r.mask', raster = basinmaps[0])
-
-# loop through erosion deposition maps to find cells that experienced ANY erosion throughout the simulation length, use them to compute a new mask
-#todo
-
-
-# make two dummy maps
-grass.mapcalc('one = 1', overwrite = True)
-grass.mapcalc('two = 2', overwrite = True)
-
-
-# make maps of the minimum and maximum elevations for the entire simulation span
-grass.run_command('r.series', input = elevmaps, output = 'min_rast,max_rast', method = 'minimum,maximum', overwrite = True)
-grass.mapcalc('min_rast = int(min_rast)', overwrite = True) # floor
-grass.mapcalc('max_rast = int(max_rast) + 1', overwrite = True) # ceiling
-
-#make a 3d raster for the max volume to make a mask
-grass.run_command('r.to.rast3elev', flags = 'l', input = 'one,two', elevation = 'max_rast,min_rast', output = 'mask_3d', overwrite = True)
-
-# use this coarse resolution layer as a mask
-grass.mapcalc3d('vol_mask = if(mask_3d == 1, 1, null())', overwrite = True)
-
-# add the 3d mask
-grass.run_command('r3.mask', map = 'vol_mask')
-
-#cleanup maps
-grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'mask_3d')                         
-
-
-# increase the vertical resolution
-grass.run_command('g.region', tbres = .01)
-
-
-# now make high resolution raster mask for the initial elevation surface, masked to 3d mask
-grass.mapcalc('init = 1', overwrite=True)
-grass.run_command('r.to.rast3elev', flags = 'lm', input = 'init', elevation = elevmaps[0], output = 'vol_test', overwrite = True)
-#create a dummy map that has the surface elevation for all cells
-grass.run_command('r.to.rast3elev', flags = 'lm', input = elevmaps[0], elevation = elevmaps[0], output = 'elev3d', overwrite = True)
-# make a depth map
-grass.mapcalc3d('depth3d = elev3d - z()', overwrite = True)
+plt.imshow(len_vect(soil_columns))
 
 # apply in situ be10 formula
 # Setup parameters
