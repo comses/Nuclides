@@ -8,19 +8,35 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+elev_init = 'DEM' # initial elevation map for t=0
+bedrock = 'bedrock' # bedrock elevation map from r.soildepth.py
 coor = '725763.609242,4284801.3547' # "727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
 
 grass.run_command('g.region', res = 10)
 
+# define an intial value for the nuclide concentrations
+init = 1
+
+grass.mapcalc('soildepth_init = if({} - {} < 0, 0, {} - {})'.format(elev_init, bedrock, elev_init, bedrock), overwrite=True)                                                                
+
+init_depths = garray.array().read('soildepth_init')
+# convert to integer
+make_column = np.vectorize(lambda x: [init] * x, otypes=[np.ndarray])
+soil_columns = make_column(map_int)
+
+
+
 #get list of elevation maps
-elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*elevation*', separator=',').strip().split(',')
-edmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*ED_rate*', separator=',').strip().split(',')
-soildepthmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*soildepth*', separator=',').strip().split(',')
+elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_elevation*', separator=',').strip().split(',')
+edmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_ED_rate*', separator=',').strip().split(',')
+soildepthmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_soildepth*', separator=',').strip().split(',')
+
+
 
 
 # loop each year of levol output maps
 #n = 0
-for elev, ed, soildepth in zip(elevmaps, edmaps,soildepthmaps):
+for elev, ed, soildepth in zip(elevmaps, edmaps, soildepthmaps):
     #n += 1
     #calculate drainage direction map
     grass.run_command("r.watershed", quiet=True, overwrite=True, elevation=elev, drainage="fldr_tmp")
@@ -37,10 +53,12 @@ for elev, ed, soildepth in zip(elevmaps, edmaps,soildepthmaps):
     # update mask to eroded cells
     grass.run_command('r.mask', raster = 'ED_bin', overwrite = True)
     
-    # pull the soil depths for the eroded cells in mask
-    map = garray.array()
-    map.read(soildepth)
+    # pull the soil depths for the eroded cells in the mask
+    depth_map = garray.array()
+    depth_map.read(soildepth)
     
+    # convert the 2d depth map to a 3d map of soil columns
+    depth_map = (depth_map * 100).astype(int) # convert to centimeters (integers)
     #remove mask
     grass.run_command('r.mask', flags = 'r')
 
@@ -48,16 +66,13 @@ for elev, ed, soildepth in zip(elevmaps, edmaps,soildepthmaps):
 #np.savetxt("np_map.csv", map, delimiter=",")
 
 
-map_int = (map * 100).astype(int)
-map_int = (map * 1).astype(int)
-init = 1
+
+# calculate summary statistics for watershed average
 
 
-make_column = np.vectorize(lambda x: [init] * x, otypes=[np.ndarray])
 
 make_column(4)
 make_column(np.array([[4,5],[1,2]]))
-soil_columns = make_column(map_int)
 
 soil_columns[600,200]
 
