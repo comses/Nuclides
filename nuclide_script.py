@@ -19,13 +19,34 @@ init = 1
 
 grass.mapcalc('soildepth_init = if({} - {} < 0, 0, {} - {})'.format(elev_init, bedrock, elev_init, bedrock), overwrite=True)                                                                
 
-init_depths = garray.array().read('soildepth_init')
+init_depths = garray.array()
+init_depths.read('soildepth_init')
+init_depths = (init_depths * 100).astype(int)
+
 # convert to integer
 make_column = np.vectorize(lambda x: [init] * x, otypes=[np.ndarray])
-soil_columns = make_column(map_int)
+soil_columns = make_column(init_depths)
+soil_columns[600,200]
 
 
+# in situ be10 formula
+# Setup parameters
+P_0 = 4.49		# production rate of Beryllium-10 in quartz at sea level [at/g/yr] after Stone, 1999.
+ltlambda = np.log(2) / 1.5e6 # decay constant
+L = 160. 	# absorption mean-free path (attentuation length)  [g/cm2]   
+p = 2.6 	# density of overburden [ g/cm3]
 
+#create a dummy map that has the surface elevation for all cells
+
+def b10_situ(column):
+    if column:
+        for depth,value in enumerate(column):
+            column[depth] += P_0 * np.exp(-1 * depth * L / p) - value * ltlambda
+
+            
+b10_situ = np.vectorize(b10_situ)
+
+b10_situ(soil_columns)
 #get list of elevation maps
 elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_elevation*', separator=',').strip().split(',')
 edmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_ED_rate*', separator=',').strip().split(',')
@@ -101,17 +122,7 @@ len_vect(soil_columns)
 
 plt.imshow(len_vect(soil_columns))
 
-# apply in situ be10 formula
-# Setup parameters
-P_0 = 4.49		# production rate of Beryllium-10 in quartz at sea level [at/g/yr] after Stone, 1999.
-ltlambda = np.log(2) / 1.5e6 # decay constant
-L = 160 	# absorption mean-free path (attentuation length)  [g/cm2]   
-p = 2.6 	# density of overburden [ g/cm3]
 
-#create a dummy map that has the surface elevation for all cells
-
-expr = 'vol_test2 = ' + str(P_0) + ' * exp( -1 * depth3d * '+ str(L / p) + ') - vol_test * ' + str(ltlambda)
-grass.mapcalc3d(expr, overwrite = True)
 
 # now let's try time step 2
 
