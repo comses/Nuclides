@@ -26,7 +26,6 @@ init_depths = (init_depths * 100).astype(int)
 # convert to integer
 make_column = np.vectorize(lambda x: [init] * x, otypes=[np.ndarray])
 soil_columns = make_column(init_depths)
-soil_columns[600,200]
 
 
 # in situ be10 formula
@@ -43,10 +42,39 @@ def b10_situ(column):
         for depth,value in enumerate(column):
             column[depth] += P_0 * np.exp(-1 * depth * L / p) - value * ltlambda
 
-            
+
 b10_situ = np.vectorize(b10_situ)
 
 b10_situ(soil_columns)
+
+
+### more vectorized be10 script
+test_col = [4,3,2,1,0]
+
+test_col += P_0 * np.exp(-1 * depth * L / p) - test_col * ltlambda
+
+for depth,value in enumerate(test_col):
+            column[depth] += P_0 * np.exp(-1 * depth * L / p) - value * ltlambda
+
+
+def return_number(my_number):
+    return my_number + 4
+
+
+def add_number(my_list):
+
+    if isinstance(my_list, (int, float)):
+        return return_number(my_list)
+    else:
+        return [add_number(xi) for xi in my_list]
+
+
+
+A = [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0], [0], [0]]]
+
+add_number(A)
+A
+
 #get list of elevation maps
 elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_elevation*', separator=',').strip().split(',')
 edmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_ED_rate*', separator=',').strip().split(',')
@@ -89,36 +117,6 @@ for elev, ed, soildepth in zip(elevmaps, edmaps, soildepthmaps):
 
 
 # calculate summary statistics for watershed average
-
-
-
-make_column(4)
-make_column(np.array([[4,5],[1,2]]))
-
-soil_columns[600,200]
-
-
-print(map_int)
-
-[init] * np.array([4,5])
-
-soil_columns = np.empty(map.shape, dtype = np.object)
-soil_columns[...] = [[] for _ in len(soil_columns)]
-
-
-
-for x,y in np.nditer([map_int, None], flags = ['refs_ok']):
-    y[...] = [init for i in range(x)]
-    #y = [init for i in range(x)]
-
-
-soil_columns[600,200]
-
-soil_columns.shape
-len([4,5,6])
-
-len_vect = np.vectorize(len)
-len_vect(soil_columns)
 
 plt.imshow(len_vect(soil_columns))
 
