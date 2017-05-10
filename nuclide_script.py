@@ -1,8 +1,4 @@
-try:
-    import grass.script as grass
-except:
-    exit("You must have GRASS GIS installed, and be in a GRASS session to run this script")
-    
+import grass.script as grass
 import grass.script.array as garray
 import numpy as np
 import matplotlib.pyplot as plt
@@ -48,32 +44,7 @@ b10_situ = np.vectorize(b10_situ)
 b10_situ(soil_columns)
 
 
-### more vectorized be10 script
-test_col = [4,3,2,1,0]
 
-test_col += P_0 * np.exp(-1 * depth * L / p) - test_col * ltlambda
-
-for depth,value in enumerate(test_col):
-            column[depth] += P_0 * np.exp(-1 * depth * L / p) - value * ltlambda
-
-
-def return_number(my_number):
-    return my_number + 4
-
-
-def add_number(my_list):
-
-    if isinstance(my_list, (int, float)):
-        return return_number(my_list)
-    else:
-        return [add_number(xi) for xi in my_list]
-
-
-
-A = [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0], [0], [0]]]
-
-add_number(A)
-A
 
 #get list of elevation maps
 elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_elevation*', separator=',').strip().split(',')
@@ -102,17 +73,22 @@ for elev, ed, soildepth in zip(elevmaps, edmaps, soildepthmaps):
     # update mask to eroded cells
     grass.run_command('r.mask', raster = 'ED_bin', overwrite = True)
     
+    erosion = garray.array()
+    erosion.read(ed)
+    erosion_cm += erosion * 100
     # pull the soil depths for the eroded cells in the mask
-    depth_map = garray.array()
-    depth_map.read(soildepth)
+
+    #depth_map = garray.array()
+    #depth_map.read(soildepth)
     
     # convert the 2d depth map to a 3d map of soil columns
-    depth_map = (depth_map * 100).astype(int) # convert to centimeters (integers)
+    #depth_map = (depth_map * 100).astype(int) # convert to centimeters (integers)
     #remove mask
     grass.run_command('r.mask', flags = 'r')
 
 
 #np.savetxt("np_map.csv", map, delimiter=",")
+erosion
 
 
 
@@ -139,5 +115,30 @@ erosionstats = grass.parse_command('r.univar', flags='g', map=levol_ED_0001, zon
 # calculate topo shielding using r.skyview
 #r.skyview input=DEM output=shielding ndir=16
 
+### more vectorized be10 script
+test_col = [4,3,2,1,0]
 
+test_col += P_0 * np.exp(-1 * depth * L / p) - test_col * ltlambda
+
+for depth,value in enumerate(test_col):
+            column[depth] += P_0 * np.exp(-1 * depth * L / p) - value * ltlambda
+
+
+def return_number(my_number):
+    return my_number += P_0 * np.exp(-1 * depth * L / p) - test_col * ltlambda
+
+
+def add_number(my_list):
+
+    if isinstance(my_list, (int, float)):
+        return return_number(my_list)
+    else:
+        return [add_number(xi) for xi in my_list]
+
+
+
+A = [[[0, 0, 0], [0, 0, 0], [0, 0, 0]], [[0], [0], [0]]]
+
+add_number(A)
+A
 
