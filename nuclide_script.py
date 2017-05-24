@@ -14,6 +14,7 @@ grass.run_command('g.region', res = 10)
 init = 1
 
 grass.mapcalc('soildepth_init = if({} - {} < 0, 0, {} - {})'.format(elev_init, bedrock, elev_init, bedrock), overwrite=True)                                                                
+core_init_depth = int(float(grass.read_command('r.what', map = 'soildepth_init', coordinates = coor, separator = ',').strip().split(',')[3]) * 100)
 
 init_depths = garray.array()
 init_depths.read('soildepth_init')
@@ -23,6 +24,7 @@ init_depths = (init_depths * 100).astype(int)
 make_column = np.vectorize(lambda x: [init] * x, otypes=[np.ndarray])
 soil_columns = make_column(init_depths)
 
+core_column = make_column(core_init_depth)
 
 # in situ be10 formula
 # Setup parameters
@@ -52,64 +54,31 @@ edmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_ED_
 soildepthmaps = grass.read_command('g.list', flags='m', type='rast', pattern='levol_soildepth*', separator=',').strip().split(',')
 
 
+grass.run_command('r.series', overwrite=True, input=edmaps, output='erosion_total', method='sum')
 
-
-# loop each year of levol output maps
-#n = 0
-for elev, ed, soildepth in zip(elevmaps, edmaps, soildepthmaps):
-    #n += 1
-    #calculate drainage direction map
-    grass.run_command("r.watershed", quiet=True, overwrite=True, elevation=elev, drainage="fldr_tmp")
+grass.run_command("r.watershed", quiet=True, overwrite=True, elevation=elevmaps[49], drainage="fldr_tmp")
+# generate basin for sample coordinates
+grass.run_command("r.water.outlet", quiet=True, overwrite=True, input="fldr_tmp", output='basin_tmp', coordinates=coor)
     
-    # generate basin for sample coordinates
-    grass.run_command("r.water.outlet", quiet=True, overwrite=True, input="fldr_tmp", output='basin_tmp', coordinates=coor)
-    
-    # mask to upstream basin
-    grass.run_command('r.mask', raster = 'basin_tmp', overwrite = True)
-    
-    # find out which cells experienced any erosion
-    grass.mapcalc('ED_bin = if('+ ed + ' < 0, 1, null())', overwrite = True)
-    
-    # update mask to eroded cells
-    grass.run_command('r.mask', raster = 'ED_bin', overwrite = True)
-    
-    erosion = garray.array()
-    erosion.read(ed)
-    erosion_cm += erosion * 100
-    # pull the soil depths for the eroded cells in the mask
+# mask to upstream basin
+grass.run_command('r.mask', raster = 'basin_tmp', overwrite = True)
 
-    #depth_map = garray.array()
-    #depth_map.read(soildepth)
-    
-    # convert the 2d depth map to a 3d map of soil columns
-    #depth_map = (depth_map * 100).astype(int) # convert to centimeters (integers)
-    #remove mask
-    grass.run_command('r.mask', flags = 'r')
+# find out which cells experienced any erosion
+grass.mapcalc('eroded_cells = if(erosion_total < 0, erosion_total, null())', overwrite = True)
+
+erosion = garray.array()
+erosion.read('eroded_cells')
+erosion *= 100
+erosion = erosion.astype(int)
+
+grass.run_command('r.mask', flags = 'r')
+
+deposition = float(grass.read_command('r.what', map = 'erosion_total', coordinates = coor, separator = ',').strip().split(',')[3]) * 100
 
 
-#np.savetxt("np_map.csv", map, delimiter=",")
-erosion
+plt.imshow(erosion)
 
-
-
-# calculate summary statistics for watershed average
-
-plt.imshow(len_vect(soil_columns))
-
-
-
-# now let's try time step 2
-
-
-
-# find cells in basin that eroded in this time step\
-r.mapcalc expression=basin_erode = if(Temporary_catchment_basin_0002 == 1 & levol_ED_rate0002 < 0, 1, null())
-
-# note, isaac adds in surface from the entire basin, not just those that erode
-# so the question is use the basin_mask as zones, or use basin_erode as zones
-erosionstats = grass.parse_command('r.univar', flags='g', map=levol_ED_0001, zones=basin_erode) # grab stats for average phytolith concentration
-
-
+# next need to loop through soil columns, average values according to erosion, and add deposition cells to top of virtual core with same value
 
 
 # calculate topo shielding using r.skyview
