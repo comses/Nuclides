@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r message=F, warning=F}
 library(tidyverse)
+library(stringr)
 library(rgrass7)
 ```
 
@@ -101,7 +102,7 @@ ggplot(record, aes(x=value, y=depth * -1, color = as.factor(time))) +
 
 ## Working in GRASS
 Use the rgrass7 library to try doing the same thing in GRASS, using a realistic DEM.
-```{r}
+```{r eval=FALSE, include=FALSE}
 initGRASS(gisBase = "/usr/lib/grass72", home = tempdir(), 
           SG = as(rast, 'SpatialGrid'),
           remove_GISRC = T, override = T)
@@ -135,14 +136,15 @@ new <- init_depths %>%
 
 
 ```{r}
-library(stringr)
-
 elevmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_elevation*', separator=',', intern = T) %>%
   str_split(',', simplify = T)
 
 edmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_ED_rate*', separator=',', intern = T) %>%
   str_split(',', simplify = T)
-
+edmaps.bare <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_bare_ED_rate*', separator=',', intern = T) %>%
+  str_split(',', simplify = T)
+edmaps.forest <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_forest_ED_rate*', separator=',', intern = T) %>%
+  str_split(',', simplify = T)
 
 # loop thru simulation outputs, generating the local watershed from each elevation map, add together into a master watershed 
 for(i in 1:nsim){
@@ -160,24 +162,69 @@ execGRASS('r.mapcalc', flags = c('overwrite'), expression = 'basin_tmp = if(isnu
 
 #execGRASS('r.mask', raster = 'basin_tmp', flags = c('overwrite'))
 
-execGRASS('r.series', flags = c('overwrite'), input = edmaps[1:5], output = 'erosion_total', method = 'sum')
+execGRASS('r.series', flags = c('overwrite'), input = edmaps, output = 'erosion_total', method = 'sum')
 #readRAST('erosion_total') %>% plot
 
 mask <- readRAST('basin_tmp') %>% as_tibble
 left_join(init_depths, mask)$basin_tmp %>% sum
 
-execGRASS('r.what', map = edmaps, coordinates = coor, separator = ',', intern = T) %>%
+
+#sample the erosion and deposition maps at core coordinats, convert to centimeters, aggregate to ten year periods
+execGRASS('r.what', map = edmaps.forest, coordinates = coor, separator = ',', intern = T) %>%
   str_split(',', simplify = T) %>%
   .[,-(1:3)] %>%
   as.numeric %>%
   `*`(100) %>%
-  data_frame(val = ., interval = rep(1:10, each = 5)) %>%
+  data_frame(val = ., interval = rep(1:10, each = 10)) %>%
   group_by(interval) %>%
   summarise(val = sum(val))
 
 
 execGRASS('r.mask', flags = c('r'))
+
+
+readRAST('erosion_total') %>% as_tibble %>%
+  ggplot(aes(s1,s2, fill = erosion_total)) +
+  geom_raster() +
+  scale_fill_distiller(type = 'div', limits = c(-.1,.1)) +
+  geom_point(x = coor[1], y = coor[2]) +
+  coord_equal()
 ```
+back to desolve integration
+```{r}
+library(deSolve)
+library(phaseR)
+
+be10 <- function(t, y, parameters){
+    z <- parameters
+    dy <- P_0 * exp(-z*L/p) - y*ltlambda
+    list(dy)
+} 
+
+
+## Chaos in the atmosphere
+Lorenz <- function(t, state, parameters) {
+  with(as.list(c(state, parameters)), {
+    dX <-  a * X + Y * Z
+    dY <-  b * (Y - Z)
+    dZ <- -X * Y + c * Y - Z
+    list(c(dX, dY, dZ))
+  })
+}
+
+parameters <- c(a = -8/3, b = -10, c = 28)
+state      <- c(X = 1, Y = 1, Z = 1)
+times      <- seq(0, 100, by = 0.01)
+
+out <- ode(y = state, times = times, func = Lorenz, parms = parameters)
+
+plot(out)
+
+## add a 3D figure if package scatterplot3D is available
+if (require(scatterplot3d))
+  scatterplot3d(out[,-1], type = "l")
+```
+
 
 need to work on the z() command
 no, actually just use a tibble in r to store the stratigraphy
