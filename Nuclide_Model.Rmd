@@ -1,7 +1,7 @@
 ---
 title: "Spatially-explicit model of cosmogenic nuclide production in sediments"
 author: "Nicolas Gauthier and Nari Miller"
-date: "October 20, 2016"
+date: "Last updated: `r format(Sys.time(), '%B, %Y')`"
 output:
   html_document: 
     keep_md: yes
@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r message=F, warning=F}
 library(tidyverse)
+#ibrary(raster)
 library(stringr)
 library(rgrass7)
 ```
@@ -60,7 +61,7 @@ We create a multi-layer raster brick where each cell represents a 1 cm$^{3}$ pac
 
 Lets create a sample raster brick with 5 layers of 1x1 cells, with an initial value of $N = 1$ for each cell.  
 ```{r}
-N0 <- rep(1, 500)
+N0 <- rep(1, 1000)
 ```
 
 ## Simulation
@@ -73,12 +74,11 @@ P_z <- function(N, z){
 
 Numerically integrate the differential equation with Euler's method. Using this function and the sample raster brick, iterate over a period of 100 years.
 ```{r}
-nsim <- 500 # simulation length
+nsim <- 100 # simulation length
 
 N <- N0 # initial conditions
 
 record <- data_frame(time = 0, depth = 1:length(N) - .5, value = N)
-
 
 for(i in 1:nsim){
   delta <- P_z(N, (1:length(N) - .5))
@@ -90,23 +90,73 @@ for(i in 1:nsim){
 
 Plot the resulting solution.
 ```{r}
-ggplot(record, aes(x=time, y=value, color = as.factor(depth))) + 
-  geom_line() + 
-  guides(color = F)
+ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) + 
+  geom_line() +
+  scale_color_distiller(palette = 'Spectral', name = 'Depth (cm)') +
+  labs(title = 'Nuclide concentration over time, at multiple depths', subtitle = 'No erosion', x = 'Time (years)', y = 'Concentration (at/g)') +
+  theme_minimal()
 ```
 ```{r}
-ggplot(record, aes(x=value, y=depth * -1, color = as.factor(time))) + 
+record %>%
+  filter(depth <= 500) %>%
+ggplot(aes(x=value, y=depth * -1, group = as.factor(time), color = time)) + 
   geom_line() + 
-  guides(color = F)
+  scale_color_distiller(palette = 'Spectral', name = 'Time (years)') +
+  labs(title = 'Nuclide concentration depth profiles with time', subtitle = 'No erosion', x = 'Concentration (at/g)', y = 'Depth (cm)') +
+  theme_minimal()
 ```
+
+Now rerun the simulation, adding a constant erosion rate.
+```{r}
+N <- N0 # initial conditions
+record <- data_frame(time = 0, depth = 1:length(N) - .5, value = N)
+for(i in 1:nsim){
+  delta <- P_z(N, (1:length(N) - .5))
+  N <- N + delta
+  N <- N[-1] ; N <- c(N,1)
+  record <- data_frame(time = i, depth = 1:length(N) - .5, value = N) %>%
+    bind_rows(record, .)
+}
+```
+
+```{r}
+ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) + 
+  geom_line() +
+  scale_color_distiller(palette = 'Spectral', name = 'Depth (cm)') +
+  labs(title = 'Nuclide concentration over time, at multiple depths', subtitle = 'Erosion = 1 cm/yr', x = 'Time (years)', y = 'Concentration (at/g)') +
+  theme_minimal()
+```
+
+```{r}
+ggplot(record, aes(x=value, y=depth * -1, group = as.factor(time), color = time)) + 
+  geom_line() + 
+  scale_color_distiller(palette = 'Spectral', name = 'Time (years)') +
+  labs(title = 'Nuclide concentration depth profiles with time', subtitle = 'Erosion = 1cm/yr', x = 'Concentration (at/g)', y = 'Depth (cm)') +
+  theme_minimal()
+```
+
+What if erosion and deposition vary over time?
+```{r}
+erosion <- rnorm(nsim, sd = 5) %>% #randomly generate a series of erosion and deposition rates
+  as.integer
+
+N <- N0 # initial conditions
+record <- data_frame(time = 0, depth = 1:length(N) - .5, value = N)
+for(i in 1:nsim){
+  delta <- P_z(N, (1:length(N) - .5))
+  N <- N + delta
+  e <- erosion[i]
+  if(e > 0){N <- c(rep(1, e), N)}
+  if(e < 0){N = N[-(1:abs(e))]}
+  record <- data_frame(time = i, depth = 1:length(N) - .5, value = N) %>%
+    bind_rows(record, .)
+}
+```
+
 
 ## Working in GRASS
 Use the rgrass7 library to try doing the same thing in GRASS, using a realistic DEM.
-```{r eval=FALSE, include=FALSE}
-initGRASS(gisBase = "/usr/lib/grass72", home = tempdir(), 
-          SG = as(rast, 'SpatialGrid'),
-          remove_GISRC = T, override = T)
-```
+*Note* for the following to work, R must be called from an active GRASS session
 
 ```{r}
 coor <- c(725763.609242,4284801.3547)
@@ -124,123 +174,89 @@ execGRASS('r.mapcalc', flags = c('overwrite'), expression = expr)
 
 ```{r}
 init_depths <- readRAST('soildepth_init') %>% # pull in raster from grass as spatial grid data frame
-  as_tibble %>% # convert to tibble
+  as_tibble %>% # convert to tibble %>%
+  rename(x = s1, y = s2) %>%
   mutate(depth_cm = as.integer(soildepth_init * 100)) %>% # convert depths from m to cm, then to integers
   mutate(soil_column = map(depth_cm, ~ rep.int(init, .x))) # make columns of length depth with value init value
   
-init_depths
-
 new <- init_depths %>% 
   mutate(soil_column = map_if(soil_column, ~ length(.x) > 0, function(x) imap_dbl(x, ~ .x + P_z(.x, z = (.y - .5)))))
 ```
 
 
+Look at the influence of different land cover types on erosion rates.
+First list out the ED rate maps for three different land cover experiments.
 ```{r}
-elevmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_elevation*', separator=',', intern = T) %>%
-  str_split(',', simplify = T)
-
 edmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_ED_rate*', separator=',', intern = T) %>%
   str_split(',', simplify = T)
 edmaps.bare <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_bare_ED_rate*', separator=',', intern = T) %>%
   str_split(',', simplify = T)
 edmaps.forest <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_forest_ED_rate*', separator=',', intern = T) %>%
   str_split(',', simplify = T)
+```
 
+Then add them all together and plot the results
+```{r}
+execGRASS('r.series', flags = c('overwrite'), input = edmaps, output = 'erosion_total', method = 'sum')
+execGRASS('r.series', flags = c('overwrite'), input = edmaps.bare, output = 'erosion_total_bare', method = 'sum')
+execGRASS('r.series', flags = c('overwrite'), input = edmaps.forest, output = 'erosion_total_forest', method = 'sum')
+
+
+erosion_dat <- bind_cols(readRAST('erosion_total') %>% as_tibble,
+                         readRAST('erosion_total_bare') %>% as_tibble,
+                         readRAST('erosion_total_forest') %>% as_tibble) %>%
+  select(x = s1, y = s2, grass = erosion_total, bare = erosion_total_bare, forest = erosion_total_forest) %>%
+  gather(key = 'landcover', value = 'erosion', -x, -y) %>%
+  mutate(erosion = erosion * 100)  # convert meters to centimeters
+
+ggplot(erosion_dat, aes(x, y)) +
+  facet_wrap(~ landcover) +
+  geom_raster(aes(fill = erosion)) +
+  scale_fill_distiller(type = 'div', limits = c(-.1,.1), name = 'Elevation change (cm)') +
+  geom_point(x = coor[1], y = coor[2]) +
+  labs(title = 'Net erosion and deposition after 50 years', subtitle = 'Under varying land covers') +
+  theme_void() +
+  coord_equal()
+```
+
+```{r}
 # loop thru simulation outputs, generating the local watershed from each elevation map, add together into a master watershed 
+elevmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_elevation*', separator=',', intern = T) %>%
+  str_split(',', simplify = T)
 for(i in 1:nsim){
   execGRASS('r.watershed', flags = c('quiet', 'overwrite'), elevation = elevmaps[i], drainage = 'fldr_tmp')
   execGRASS('r.water.outlet', flags = c('quiet', 'overwrite'), input = 'fldr_tmp', output = paste0('basin_tmp_', i), coordinates = coor)
+  execGRASS('r.mapcalc', flags = c('overwrite'), expression = 'basin_tmp = if(isnull(basin_tmp), 0, 1)')
 }
 
 basinmaps <- execGRASS('g.list', flags = c('m'), type = 'rast', pattern = 'basin_tmp_*', separator = ',', intern = T) %>%
   str_split(',', simplify = T)
 
-
-
-execGRASS('r.mapcalc', flags = c('overwrite'), expression = 'basin_tmp = if(isnull(basin_tmp), 0, 1)')
-
-
+execGRASS('r.series', flags = c('overwrite'), input = basinmaps, output = 'basin_all', method = 'sum')
 #execGRASS('r.mask', raster = 'basin_tmp', flags = c('overwrite'))
-
-execGRASS('r.series', flags = c('overwrite'), input = edmaps, output = 'erosion_total', method = 'sum')
-#readRAST('erosion_total') %>% plot
-
-mask <- readRAST('basin_tmp') %>% as_tibble
-left_join(init_depths, mask)$basin_tmp %>% sum
+readRAST('basin_all') %>% plot
+# so most cells are in the watershed all 50 years
 
 
-#sample the erosion and deposition maps at core coordinats, convert to centimeters, aggregate to ten year periods
-execGRASS('r.what', map = edmaps.forest, coordinates = coor, separator = ',', intern = T) %>%
+
+mask <- readRAST('basin_all') %>% 
+  as_tibble %>%
+  select(x = s1, y = s2)
+semi_join(init_depths, mask) # extract only the soil columns that are in any of the simulation watershed
+```
+
+
+```{r}
+#sample the erosion and deposition maps at core coordinates, convert to centimeters
+# we'll start with the bare ground case, because deposition is high enough we don't have to worry about numerical instability yet
+execGRASS('r.what', map = edmaps.bare, coordinates = coor, separator = ',', intern = T) %>%
   str_split(',', simplify = T) %>%
   .[,-(1:3)] %>%
   as.numeric %>%
-  `*`(100) %>%
-  data_frame(val = ., interval = rep(1:10, each = 10)) %>%
-  group_by(interval) %>%
-  summarise(val = sum(val))
-
+  `*`(100) %>% #meters to cm
+  tibble(year = 1:100, elev_change = .)
 
 execGRASS('r.mask', flags = c('r'))
-
-
-readRAST('erosion_total') %>% as_tibble %>%
-  ggplot(aes(s1,s2, fill = erosion_total)) +
-  geom_raster() +
-  scale_fill_distiller(type = 'div', limits = c(-.1,.1)) +
-  geom_point(x = coor[1], y = coor[2]) +
-  coord_equal()
-```
-back to desolve integration
-```{r}
-library(deSolve)
-library(phaseR)
-
-be10 <- function(t, y, parameters){
-    z <- parameters
-    dy <- P_0 * exp(-z*L/p) - y*ltlambda
-    list(dy)
-} 
-
-
-## Chaos in the atmosphere
-Lorenz <- function(t, state, parameters) {
-  with(as.list(c(state, parameters)), {
-    dX <-  a * X + Y * Z
-    dY <-  b * (Y - Z)
-    dZ <- -X * Y + c * Y - Z
-    list(c(dX, dY, dZ))
-  })
-}
-
-parameters <- c(a = -8/3, b = -10, c = 28)
-state      <- c(X = 1, Y = 1, Z = 1)
-times      <- seq(0, 100, by = 0.01)
-
-out <- ode(y = state, times = times, func = Lorenz, parms = parameters)
-
-plot(out)
-
-## add a 3D figure if package scatterplot3D is available
-if (require(scatterplot3d))
-  scatterplot3d(out[,-1], type = "l")
-```
-
-
-need to work on the z() command
-no, actually just use a tibble in r to store the stratigraphy
-
-extra grass commands
-need to find the top and bottom values of the dem and set them as the t and b bounds in the 3d region first
-g.region t=1305 b=540 res=10 tbres=.1                                           
-
-
-r.to.rast3elev -l --overwrite input=nuclide_init@PERMANENT elevation=DEM output=nuclide_3d
-make a 3d raster from a dem and a data, filling under bounds
-
-
-Run r.watershed to calculate drainage direction map.
-```{r}
-doGRASS('r.watershed', flags = c('overwrite'), elevation = dem, drainage = dir) 
 ```
 
 
