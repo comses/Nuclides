@@ -96,6 +96,7 @@ ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) +
   labs(title = 'Nuclide concentration over time, at multiple depths', subtitle = 'No erosion', x = 'Time (years)', y = 'Concentration (at/g)') +
   theme_minimal()
 ```
+
 ```{r}
 record %>%
   filter(depth <= 500) %>%
@@ -109,6 +110,7 @@ ggplot(aes(x=value, y=depth * -1, group = as.factor(time), color = time)) +
 Now rerun the simulation, adding a constant erosion rate.
 ```{r}
 N <- N0 # initial conditions
+nsim <- 300
 record <- data_frame(time = 0, depth = 1:length(N) - .5, value = N)
 for(i in 1:nsim){
   delta <- P_z(N, (1:length(N) - .5))
@@ -119,6 +121,7 @@ for(i in 1:nsim){
 }
 ```
 
+We can see that, with constant erosion, nuclide concentrations reach and equilibrium point.
 ```{r}
 ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) + 
   geom_line() +
@@ -127,6 +130,7 @@ ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) +
   theme_minimal()
 ```
 
+Likewise, we can see that an equilibrium depth profile is reached.
 ```{r}
 ggplot(record, aes(x=value, y=depth * -1, group = as.factor(time), color = time)) + 
   geom_line() + 
@@ -135,9 +139,10 @@ ggplot(record, aes(x=value, y=depth * -1, group = as.factor(time), color = time)
   theme_minimal()
 ```
 
-What if erosion and deposition vary over time?
+What if erosion varies over time?
 ```{r}
-erosion <- rnorm(nsim, sd = 5) %>% #randomly generate a series of erosion and deposition rates
+set.seed(1000) # set seed for reproduceability
+erosion <- runif(nsim, max = 2) %>% #randomly generate a series of erosion and deposition rates
   as.integer
 
 N <- N0 # initial conditions
@@ -146,13 +151,61 @@ for(i in 1:nsim){
   delta <- P_z(N, (1:length(N) - .5))
   N <- N + delta
   e <- erosion[i]
-  if(e > 0){N <- c(rep(1, e), N)}
-  if(e < 0){N = N[-(1:abs(e))]}
+  if(e > 0){N = N[-(1:e)]}
   record <- data_frame(time = i, depth = 1:length(N) - .5, value = N) %>%
     bind_rows(record, .)
 }
 ```
 
+```{r}
+ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) + 
+  geom_line() +
+  scale_color_distiller(palette = 'Spectral', name = 'Depth (cm)') +
+  labs(title = 'Nuclide concentration over time, at multiple depths', subtitle = 'Variable erosion', x = 'Time (years)', y = 'Concentration (at/g)') +
+  theme_minimal()
+```
+
+```{r}
+ggplot(record, aes(x=value, y=depth * -1, group = as.factor(time), color = time)) + 
+  geom_line(alpha = .1) + 
+  scale_color_distiller(palette = 'Spectral', name = 'Time (years)') +
+  labs(title = 'Nuclide concentration depth profiles with time', subtitle = 'Variable erosion', x = 'Concentration (at/g)', y = 'Depth (cm)') +
+  theme_minimal()
+```
+
+Now include variable erosion AND deposition
+```{r}
+erosion <- rnorm(nsim, mean = -1, sd = 1.5) %>% #randomly generate a series of erosion and deposition rates
+  as.integer
+
+N <- N0 # initial conditions
+record <- data_frame(time = 0, depth = 1:length(N) - .5, value = N)
+for(i in 1:nsim){
+  delta <- P_z(N, (1:length(N) - .5))
+  N <- N + delta
+  e <- erosion[i]
+  if(e > 0){N <- c(rep(1, e), N)} 
+  if(e < 0){N = N[-(1:abs(e))]} 
+  record <- data_frame(time = i, depth = 1:length(N) - .5, value = N) %>%
+    bind_rows(record, .)
+}
+```
+
+```{r}
+ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) + 
+  geom_line(alpha = .5) +
+  scale_color_distiller(palette = 'Spectral', name = 'Depth (cm)') +
+  labs(title = 'Nuclide concentration over time, at multiple depths', subtitle = 'Variable erosion and depostion', x = 'Time (years)', y = 'Concentration (at/g)') +
+  theme_minimal()
+```
+
+```{r}
+ggplot(record, aes(x=value, y=depth * -1, group = as.factor(time), color = time)) + 
+  geom_line(alpha = .1) + 
+  scale_color_distiller(palette = 'Spectral', name = 'Time (years)') +
+  labs(title = 'Nuclide concentration depth profiles with time', subtitle = 'Variable erosion and deposition', x = 'Concentration (at/g)', y = 'Depth (cm)') +
+  theme_minimal()
+```
 
 ## Working in GRASS
 Use the rgrass7 library to try doing the same thing in GRASS, using a realistic DEM.
