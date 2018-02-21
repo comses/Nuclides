@@ -309,7 +309,7 @@ execGRASS('r.what', map = edmaps.bare, coordinates = coor, separator = ',', inte
   `*`(100) %>% #meters to cm
   tibble(year = 1:100, elev_change = .)
 
-execGRASS('r.mask', flags = c('r'))
+#execGRASS('r.mask', flags = c('r'))
 ```
 
 
