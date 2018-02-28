@@ -15,7 +15,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r message=F, warning=F}
 library(tidyverse)
-#ibrary(raster)
 library(stringr)
 library(rgrass7)
 ```
@@ -232,8 +231,9 @@ init_depths <- readRAST('soildepth_init') %>% # pull in raster from grass as spa
   mutate(depth_cm = as.integer(soildepth_init * 100)) %>% # convert depths from m to cm, then to integers
   mutate(soil_column = map(depth_cm, ~ rep.int(init, .x))) # make columns of length depth with value init value
   
-new <- init_depths %>% 
-  mutate(soil_column = map_if(soil_column, ~ length(.x) > 0, function(x) imap_dbl(x, ~ .x + P_z(.x, z = (.y - .5)))))
+init_depths %>% 
+  mutate(soil_column = map_if(soil_column, ~ length(.x) > 0, ~ .x + P_z(.x, 1:length(.x) - .5)))
+
 ```
 
 
