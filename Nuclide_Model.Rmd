@@ -1,6 +1,6 @@
 ---
 title: "Spatially-explicit model of cosmogenic nuclide production in sediments"
-author: "Nicolas Gauthier and Nari Miller"
+author: "Nicolas Gauthier"
 date: "Last updated: `r format(Sys.time(), '%B, %Y')`"
 output:
   html_document: 
@@ -58,7 +58,7 @@ For the sake of simplicity, we assume there is no topographic shielding (topogra
 First we need base set of raster maps to initialize the variables.  
 We create a multi-layer raster brick where each cell represents a 1 cm$^{3}$ packet of sediment, the **values()** of the cells correspond to $N$ (the concentration of nuclides in that packet), and the index of each layer corresponds to $1 + z$, the depth of that packet of sediment in cm.  
 
-Lets create a sample raster brick with 5 layers of 1x1 cells, with an initial value of $N = 1$ for each cell.  
+Lets create a sample soil column of length 1000, corresponding to 10 meters of 1cm cells, with an initial value of $N = 1$ for each cell.  
 ```{r}
 N0 <- rep(1, 1000)
 ```
@@ -120,7 +120,7 @@ for(i in 1:nsim){
 }
 ```
 
-We can see that, with constant erosion, nuclide concentrations reach and equilibrium point.
+We can see that, with constant erosion, nuclide concentrations reach an equilibrium point.
 ```{r}
 ggplot(record, aes(x=time, y=value, group = as.factor(depth), color = depth)) + 
   geom_line() +
@@ -206,38 +206,87 @@ ggplot(record, aes(x=value, y=depth * -1, group = as.factor(time), color = time)
   theme_minimal()
 ```
 
-## Working in GRASS
-Use the rgrass7 library to try doing the same thing in GRASS, using a realistic DEM.
-*Note* for the following to work, R must be called from an active GRASS session
+
+Now, as we'll see later, erosion rates are very rarely around 1cm/yr. This introduces potential numeric instabilities, because we are only able to add or remove at minimum 1cm of sediment per year. One solution is to only apply the erosion and deposition changes every 100 years (or another length of time long enough for a change in soil depth of ~1cm to occur). To test this, we can compare two 900 year simulations, one in which 1cm is removed every year, another in which 100 cm are removed every 100 years. Do these arrive at the same equilibrium?
+
+No they do not!
+
+So instead, we'll keep the 1cm packets of sediment, but allow the depths of those 1cm packets to vary continuously. Rewrite the above functions, now including a depth column with the nuclide values to store the changing depths.
+```{r}
+nsim <- 1000
+erosion <- rnorm(nsim, mean = -.1, sd = .5)
+soil_col <- tibble(depth = 1:length(N0), N = N0)
+record <- soil_col %>% mutate(time = 0)
+new_soil <- 1
+
+for(i in 1:nsim){
+  e <- erosion[i]
+  soil_col <- soil_col %>%
+    mutate(N = N + map2_dbl(N, depth, P_z)) %>%
+    mutate(depth = depth + e) %>%
+    filter(depth > 0.001) # 0.001 not 0 due to floating point precision
+  
+  if(min(soil_col$depth > 2)){
+    min.val <- min(soil_col$depth)
+    soil_col <- soil_col %>%
+      add_row(depth = seq(1 + min.val - floor(min.val), min.val - 1), N = new_soil, .before = 1)
+  }
+  record <- soil_col %>%
+    mutate(time = i) %>%
+    bind_rows(record, .)
+}
+```
 
 ```{r}
-coor <- c(725763.609242,4284801.3547)
+record %>%
+  mutate(depth = floor(depth)) %>%
+ggplot(aes(x=time, y=N, group = as.factor(depth), color = depth)) + 
+  geom_line() +
+  scale_color_distiller(palette = 'Spectral', name = 'Depth (cm)') +
+  labs(title = 'Nuclide concentration over time, at multiple depths', subtitle = 'Varying, non-integer erosion rates', x = 'Time (years)', y = 'Concentration (at/g)') +
+  theme_minimal()
+```
 
+
+## Working in GRASS
+Use the rgrass7 library to try doing the same thing in GRASS, using a realistic DEM. *Note* for the following to work, R must be called from an active GRASS session.
+
+First define the coordinates of our virtual sediment core. Its important to select a meaningful point given the spatial distribution of erosion and deposition. Also define an initial value for the nuclide concentrations, and a length for the simulation to last.
+```{r}
+core.pt <- c(725763.609242,4284801.3547)  # location of the virtual sediment core
+init <- 1 # inital nuclide value
+nsim <- 50
+```
+
+Now define some map names representing raster that already exist in GRASS, namely the DEM and bedrock maps used in r.landscape_evol. Use these to setup and execute a command in r.mapcalc that calculates the depth to bedrock of every cell in the DEM.
+```{r}
 elev_init <- 'DEM'
 bedrock <- 'bedrock'
-init <- 1 # inital nuclide value
-
-nsim <- 50
 
 expr <- paste0(c('soildepth_init = if(', elev_init, ' - ', bedrock, ' < 0, 0, ', elev_init, ' - ', bedrock, ')'), collapse = '')
 execGRASS('r.mapcalc', flags = c('overwrite'), expression = expr)
 ```
 
-
-```{r}
+Use this soil depth map to create a dataframe in R, where each row corresponds to a cell of the raster. Within each row of this dataframe, the column named *soil_column* contains a vector whose length corresponds to the soil depth, in centimeters, with each value set to the initial nuclide value defined above.
+```{r }
 init_depths <- readRAST('soildepth_init') %>% # pull in raster from grass as spatial grid data frame
-  as_tibble %>% # convert to tibble %>%
-  rename(x = s1, y = s2) %>%
+  as_tibble %>% # convert to tibble
+  filter(soildepth_init > 0) %>%  # remove null cells
+  rename(x = s1, y = s2) %>%  # rename the location columns
   mutate(depth_cm = as.integer(soildepth_init * 100)) %>% # convert depths from m to cm, then to integers
-  mutate(soil_column = map(depth_cm, ~ rep.int(init, .x))) # make columns of length depth with value init value
-  
-init_depths %>% 
-  mutate(soil_column = map_if(soil_column, ~ length(.x) > 0, ~ .x + P_z(.x, 1:length(.x) - .5)))
+  mutate(soil_column = map(depth_cm, ~ rep.int(init, .x))) %>% # make soil columns of length depth with value init value
+  select(-soildepth_init)
 
+init_depths
 ```
 
+Now we've set up our basic model domain, an irregular three dimensional grid of raster resolution by 1cm cells, represented as a nested data frame. We can apply the nuclide function to each column in turn, just as in the one dimensional case above.
+```{r}
+init_depths %>% 
+  mutate(soil_column = map2(soil_column, depth_cm, ~ .x + P_z(.x, 1:.y - .5)))
+```
+As before, let's add in time varying erosion and deposition. This time, we'll use ED information from a previous run of r.landscape_evol. We'll compare ED maps from three different land cover experiments to see how our method performs in different erosional contexts.
 
-Look at the influence of different land cover types on erosion rates.
 First list out the ED rate maps for three different land cover experiments.
 ```{r}
 edmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_ED_rate*', separator=',', intern = T) %>%
@@ -248,12 +297,30 @@ edmaps.forest <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol
   str_split(',', simplify = T)
 ```
 
-Then add them all together and plot the results
+So even when there's just grass for the land cover, the annual erosion rate is so small that its much less than our effective resolution of 1cm per year. So we have to run the nuclide simulation for a longer span of time, about 100 years, for there to be enough erosion to even remove one cm cell.
 ```{r}
+readRAST(edmaps[1]) %>%
+  as_tibble %>%
+  select(x = s1, y = s2, ED = 1) %>%
+  mutate(ED = ED * 100 * 10)  # convert meters to centimeters
+```
+
+Sample the erosion and deposition maps at core coordinates, convert to centimeters. We'll start with the bare ground case, because ED rates are high enough we don't have to worry about numerical instability yet.
+```{r}
+execGRASS('r.what', map = edmaps.bare, coordinates = core.pt, separator = ',', intern = T) %>%
+  str_split(',', simplify = T) %>%
+  .[,-(1:3)] %>%
+  as.numeric %>%
+  `*`(100) %>% # meters to cm
+  tibble(year = 1:100, elev_change = .)
+```
+
+
+Then add them all together and plot the results
+```{r }
 execGRASS('r.series', flags = c('overwrite'), input = edmaps, output = 'erosion_total', method = 'sum')
 execGRASS('r.series', flags = c('overwrite'), input = edmaps.bare, output = 'erosion_total_bare', method = 'sum')
 execGRASS('r.series', flags = c('overwrite'), input = edmaps.forest, output = 'erosion_total_forest', method = 'sum')
-
 
 erosion_dat <- bind_cols(readRAST('erosion_total') %>% as_tibble,
                          readRAST('erosion_total_bare') %>% as_tibble,
@@ -265,11 +332,30 @@ erosion_dat <- bind_cols(readRAST('erosion_total') %>% as_tibble,
 ggplot(erosion_dat, aes(x, y)) +
   facet_wrap(~ landcover) +
   geom_raster(aes(fill = erosion)) +
-  scale_fill_distiller(type = 'div', limits = c(-.1,.1), name = 'Elevation change (cm)') +
-  geom_point(x = coor[1], y = coor[2]) +
+  scale_fill_distiller(type = 'div', limits = c(-15,15), name = 'Elevation change (cm)') +
+  geom_point(x = core.pt[1], y = core.pt[2]) +
   labs(title = 'Net erosion and deposition after 50 years', subtitle = 'Under varying land covers') +
   theme_void() +
   coord_equal()
+
+erosion_dat <- bind_cols(readRAST(edmaps[50]) %>% as_tibble,
+                         readRAST(edmaps.bare[50]) %>% as_tibble,
+                         readRAST(edmaps.forest[50]) %>% as_tibble) %>%
+  select(x = s1, y = s2, grass = 1, bare = 4, forest = 7) %>%
+  gather(key = 'landcover', value = 'erosion', -x, -y) %>%
+  mutate(erosion = erosion * 100)  # convert meters to centimeters
+
+ggplot(erosion_dat, aes(x, y)) +
+  facet_wrap(~ landcover) +
+  geom_raster(aes(fill = erosion)) +
+  scale_fill_distiller(type = 'div', limits = c(-.5, .5), name = 'Erosion rate (cm/yr)') +
+  geom_point(x = core.pt[1], y = core.pt[2]) +
+  labs(title = 'Erosion and deposition rates at 50 years', subtitle = 'Under varying land covers') +
+  theme_void() +
+  coord_equal()
+
+
+hist(erosion_dat %>% filter(landcover == 'grass') %>% .$erosion)
 ```
 
 ```{r}
@@ -278,7 +364,7 @@ elevmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_elev
   str_split(',', simplify = T)
 for(i in 1:nsim){
   execGRASS('r.watershed', flags = c('quiet', 'overwrite'), elevation = elevmaps[i], drainage = 'fldr_tmp')
-  execGRASS('r.water.outlet', flags = c('quiet', 'overwrite'), input = 'fldr_tmp', output = paste0('basin_tmp_', i), coordinates = coor)
+  execGRASS('r.water.outlet', flags = c('quiet', 'overwrite'), input = 'fldr_tmp', output = paste0('basin_tmp_', i), coordinates = core.pt)
   execGRASS('r.mapcalc', flags = c('overwrite'), expression = 'basin_tmp = if(isnull(basin_tmp), 0, 1)')
 }
 
@@ -290,26 +376,10 @@ execGRASS('r.series', flags = c('overwrite'), input = basinmaps, output = 'basin
 readRAST('basin_all') %>% plot
 # so most cells are in the watershed all 50 years
 
-
-
 mask <- readRAST('basin_all') %>% 
   as_tibble %>%
   select(x = s1, y = s2)
 semi_join(init_depths, mask) # extract only the soil columns that are in any of the simulation watershed
-```
-
-
-```{r}
-#sample the erosion and deposition maps at core coordinates, convert to centimeters
-# we'll start with the bare ground case, because deposition is high enough we don't have to worry about numerical instability yet
-execGRASS('r.what', map = edmaps.bare, coordinates = coor, separator = ',', intern = T) %>%
-  str_split(',', simplify = T) %>%
-  .[,-(1:3)] %>%
-  as.numeric %>%
-  `*`(100) %>% #meters to cm
-  tibble(year = 1:100, elev_change = .)
-
-#execGRASS('r.mask', flags = c('r'))
 ```
 
 
@@ -324,7 +394,3 @@ for each time step:
     get all the cells in that watershed
     add up the nucldie enrichment of all the cells that eroded in the watershed, average based on the depth of erosion
     add that value of nuclide in the depth of deposition  at that area.
-
-                             
-
-r.water.outlet --overwrite input=draindir_45@PERMANENT output=basin_temp coordinates=724673.750147,4284260.05826
