@@ -271,38 +271,50 @@ Use this soil depth map to create a dataframe in R, where each row corresponds t
 ```{r }
 init_depths <- readRAST('soildepth_init') %>% # pull in raster from grass as spatial grid data frame
   as_tibble %>% # convert to tibble
-  filter(soildepth_init > 0) %>%  # remove null cells
   rename(x = s1, y = s2) %>%  # rename the location columns
   mutate(depth_cm = as.integer(soildepth_init * 100)) %>% # convert depths from m to cm, then to integers
-  mutate(soil_column = map(depth_cm, ~ rep.int(init, .x))) %>% # make soil columns of length depth with value init value
-  select(-soildepth_init)
-
-init_depths
+  filter(depth_cm > 0) %>%  # remove null cells
+  mutate(soil_column = map(depth_cm, ~ cbind(depth = 1:.x, N = rep.int(init, .x)))) %>% # make soil columns of length depth with value init value
+  select(-soildepth_init, -depth_cm)
 ```
 
 Now we've set up our basic model domain, an irregular three dimensional grid of raster resolution by 1cm cells, represented as a nested data frame. We can apply the nuclide function to each column in turn, just as in the one dimensional case above.
 ```{r}
+do.nuclides <- function(soil_col, e = 0, inheritance = 1){
+  soil_col[,2] <- soil_col[,2, drop = F] + P_z(soil_col[,2, drop = F], soil_col[,1, drop = F])
+  soil_col[,1] <- soil_col[,1, drop = F] + e
+  soil_col <- soil_col[soil_col[,1] > .001, , drop = F]
+
+  min.val <- min(soil_col[,1, drop = F])
+  if(min.val > 2){
+    newsoil <- cbind(depth = seq(1 + min.val - floor(min.val), min.val - 1), N = inheritance)
+    soil_col <- rbind(newsoil, soil_col)
+  }
+  return(soil_col)
+}
+
 init_depths %>% 
-  mutate(soil_column = map2(soil_column, depth_cm, ~ .x + P_z(.x, 1:.y - .5)))
+  mutate(soil_column = map(soil_column, do.nuclides))
 ```
+
 As before, let's add in time varying erosion and deposition. This time, we'll use ED information from a previous run of r.landscape_evol. We'll compare ED maps from three different land cover experiments to see how our method performs in different erosional contexts.
 
 First list out the ED rate maps for three different land cover experiments.
 ```{r}
-edmaps <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_ED_rate*', separator=',', intern = T) %>%
+edmaps <- execGRASS('g.list', flags = c('m'), type ='rast', pattern ='levol_ED_rate*', separator =',', intern = T) %>%
   str_split(',', simplify = T)
-edmaps.bare <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_bare_ED_rate*', separator=',', intern = T) %>%
+edmaps.bare <- execGRASS('g.list', flags = c('m'), type ='rast', pattern ='levol_bare_ED_rate*', separator =',', intern = T) %>%
   str_split(',', simplify = T)
-edmaps.forest <- execGRASS('g.list', flags = c('m'), type='rast', pattern='levol_forest_ED_rate*', separator=',', intern = T) %>%
+edmaps.forest <- execGRASS('g.list', flags = c('m'), type ='rast', pattern ='levol_forest_ED_rate*', separator =',', intern = T) %>%
   str_split(',', simplify = T)
 ```
 
-So even when there's just grass for the land cover, the annual erosion rate is so small that its much less than our effective resolution of 1cm per year. So we have to run the nuclide simulation for a longer span of time, about 100 years, for there to be enough erosion to even remove one cm cell.
+
 ```{r}
 readRAST(edmaps[1]) %>%
   as_tibble %>%
   select(x = s1, y = s2, ED = 1) %>%
-  mutate(ED = ED * 100 * 10)  # convert meters to centimeters
+  mutate(ED = ED * 100)  # convert meters to centimeters
 ```
 
 Sample the erosion and deposition maps at core coordinates, convert to centimeters. We'll start with the bare ground case, because ED rates are high enough we don't have to worry about numerical instability yet.
