@@ -280,20 +280,20 @@ init_depths <- readRAST('soildepth_init') %>% # pull in raster from grass as spa
 
 Now we've set up our basic model domain, an irregular three dimensional grid of raster resolution by 1cm cells, represented as a nested data frame. We can apply the nuclide function to each column in turn, just as in the one dimensional case above.
 ```{r}
-do.nuclides <- function(soil_col, e = 0, inheritance = 1){
+do.nuclides <- function(soil_col, ed = 0, inheritance = 1){
   soil_col[,2] <- soil_col[,2, drop = F] + P_z(soil_col[,2, drop = F], soil_col[,1, drop = F])
-  soil_col[,1] <- soil_col[,1, drop = F] + e
+  soil_col[,1] <- soil_col[,1, drop = F] + ed
   soil_col <- soil_col[soil_col[,1] > .001, , drop = F]
 
   min.val <- min(soil_col[,1, drop = F])
-  if(min.val > 2){
+  if(min.val >= 2 & min.val != Inf){
     newsoil <- cbind(depth = seq(1 + min.val - floor(min.val), min.val - 1), N = inheritance)
     soil_col <- rbind(newsoil, soil_col)
   }
   return(soil_col)
 }
 
-init_depths %>% 
+init_depths %>%
   mutate(soil_column = map(soil_column, do.nuclides))
 ```
 
@@ -311,10 +311,27 @@ edmaps.forest <- execGRASS('g.list', flags = c('m'), type ='rast', pattern ='lev
 
 
 ```{r}
-readRAST(edmaps[1]) %>%
+ed <- readRAST(edmaps[1]) %>%
   as_tibble %>%
   select(x = s1, y = s2, ED = 1) %>%
-  mutate(ED = ED * 100)  # convert meters to centimeters
+  mutate(ED = ED * 100) # convert meters to centimeters
+  
+  
+inner_join(init_depths, ed) %>% 
+  mutate(soil_column = map2(soil_column, ED, do.nuclides))
+
+ggplot(init_depths, aes(x,y)) +
+  geom_raster(fill = 'blue') +
+  geom_raster(data = ed, fill = 'red') +
+  coord_fixed()
+
+
+test<- init_depths
+
+for(i in 1:100){
+  test <- test %>%
+    mutate(soil_column = map(soil_column, do.nuclides, e = -1))
+}
 ```
 
 Sample the erosion and deposition maps at core coordinates, convert to centimeters. We'll start with the bare ground case, because ED rates are high enough we don't have to worry about numerical instability yet.
