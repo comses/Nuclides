@@ -310,7 +310,7 @@ edmaps.forest <- execGRASS('g.list', flags = c('m'), type ='rast', pattern ='lev
 ```
 
 
-```{r}
+```{r eval=FALSE, include=FALSE}
 ed <- readRAST(edmaps[1]) %>%
   as_tibble %>%
   select(x = s1, y = s2, ED = 1) %>%
@@ -328,14 +328,17 @@ ggplot(init_depths, aes(x,y)) +
 
 test<- init_depths
 
+pb <- txtProgressBar()
 for(i in 1:100){
   test <- test %>%
     mutate(soil_column = map(soil_column, do.nuclides, e = -1))
+  setTxtProgressBar(pb, i)
 }
+close(pb)
 ```
 
 Sample the erosion and deposition maps at core coordinates, convert to centimeters. We'll start with the bare ground case, because ED rates are high enough we don't have to worry about numerical instability yet.
-```{r}
+```{r eval=FALSE, include=FALSE}
 execGRASS('r.what', map = edmaps.bare, coordinates = core.pt, separator = ',', intern = T) %>%
   str_split(',', simplify = T) %>%
   .[,-(1:3)] %>%
