@@ -7,6 +7,8 @@ grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'RASTER3D_
 grass.run_command('r.mask', flags = 'r')
 coor = '725763.609242,4284801.3547' # "727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
 
+grass.run_command('g.region', res = 10)
+
 #get list of elevation maps
 elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*elevation*', separator=',').strip().split(',')
 
@@ -31,6 +33,10 @@ grass.run_command('g.region', res = 10, res3 = 10, b = np.floor(float(elev_stats
 # mask to basin
 grass.run_command('r.mask', raster = basinmaps[0])
 
+# loop through erosion deposition maps to find cells that experienced ANY erosion throughout the simulation length, use them to compute a new mask
+#todo
+
+
 # make two dummy maps
 grass.mapcalc('one = 1', overwrite = True)
 grass.mapcalc('two = 2', overwrite = True)
@@ -42,13 +48,17 @@ grass.mapcalc('min_rast = int(min_rast)', overwrite = True) # floor
 grass.mapcalc('max_rast = int(max_rast) + 1', overwrite = True) # ceiling
 
 #make a 3d raster for the max volume to make a mask
-grass.run_command('r.to.rast3elev', flags = 'l', input = 'one,two', elevation = 'max_rast,min_rast', output = 'init_3d', overwrite = True)
+grass.run_command('r.to.rast3elev', flags = 'l', input = 'one,two', elevation = 'max_rast,min_rast', output = 'mask_3d', overwrite = True)
 
 # use this coarse resolution layer as a mask
-grass.mapcalc3d('vol_mask = if(init_3d == 1, 1, null())', overwrite = True)
+grass.mapcalc3d('vol_mask = if(mask_3d == 1, 1, null())', overwrite = True)
 
 # add the 3d mask
 grass.run_command('r3.mask', map = 'vol_mask')
+
+#cleanup maps
+grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'mask_3d')                         
+
 
 # increase the vertical resolution
 grass.run_command('g.region', tbres = .01)

@@ -1,6 +1,7 @@
 import grass.script as grass
 import grass.script.array as garray
 import numpy as np
+#from multiprocessing import Pool
 import matplotlib.pyplot as plt
 
 
@@ -40,11 +41,15 @@ def b10_situ(column):
         for depth,value in enumerate(column):
             column[depth] += P_0 * np.exp(-1 * depth * L / p) - value * ltlambda
 
+#pool = Pool(processes=4)
+#timeit pool.map(b10_situ, soil_columns)
+
 
 b10_situ = np.vectorize(b10_situ)
-
 b10_situ(soil_columns)
 
+#timeit b10_situ(soil_columns)
+#timeit ne.evaluate("b10_situ(soil_columns)")
 
 
 
