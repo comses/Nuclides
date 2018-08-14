@@ -70,19 +70,26 @@ cm2percell = reg['nsres'] * reg['ewres'] * 10000
 upslopecells = float(grass.read_command('r.stats', quiet=True, flags='cn', input=basinmap, nsteps='1').strip('\n').split(' ')[1])
 scalar = math.pow((upslopecells * m2percell), -0.01 ) #scales basin average readings to the size of the basin. Accounts for time averaging and loss due to localized up-basin sinks.
 
-#change landcover maps to proxy of phytoliths for grasses
-grass.message('Generating grasses phytolith densities.')
+#change landcover maps to proxy of phytoliths for grasses and woody vegetation
+grass.message('Generating phytolith densities.')
 #tphytomaps = []
 #sphytomaps = []
 gphytomaps = []
+wphytomaps = []
 avphytos = []
 for lcovmap, elevmap, deltamap in zip(lcovmaps, elevmaps, deltamaps):
     #Grasses DATA come from Fredlund and Tieszen 1994 for mixed grassland. Annual production of 2g/m2 of opaline grass phytoliths.
-    gphyto = "%s_insitu_grassphytos_%s" % (outprefix,lcovmap.split('_Landcover')[0])    
+    #Woody phytoliths estimated by assuming woody vegetation produces ~2 orders of magnitude fewer phytoliths than grasses, based on data from Irene
+    gphyto = "%s_insitu_grassphytos_%s" % (outprefix,lcovmap.split('_Landcover')[0])
+    wphyto = "%s_insitu_woodphytos_%s" % (outprefix,lcovmap.split('_Landcover')[0]) # note for Isaac, I'm not sure what the above line does, so I just repeat it here
     grass.mapcalc("${phytomap} = eval(a=nsres()*ewres()*2, b=graph(${lcovmap}, 0,0.1, 5,1, 50,0.4), a*b)", overwrite = True, quiet = True, phytomap = gphyto, lcovmap = lcovmap) # modify yearly phytolith deposition for pure grassland by the actual landcover mixture (perecntage of grass in succession stage), and then scale to size of raster cel. This map is then g/cell of grass phytos.
+    grass.mapcalc("${phytomap} = eval(a=nsres()*ewres()*0.02, b=graph(${lcovmap}, 0,0, 7,0.05, 18,0.33, 35,0.37, 50,1), a*b)", overwrite = True, quiet = True, phytomap = wphyto, lcovmap = lcovmap) # ditto for woody phytoliths
     gphytostats = grass.parse_command('r.univar', flags='g', map=gphyto, zones=basinmap) # grab stats for average phytolith concentration
-    avphytos.append(float(gphytostats['mean']) * scalar)
+    wphytostats = grass.parse_command('r.univar', flags='g', map=wphyto, zones=basinmap) # grab stats for average phytolith concentration
+    avgphytos.append(float(gphytostats['mean']) * scalar)
+    avwphytos.append(float(wphytostats['mean']) * scalar)
     gphytomaps.append(gphyto)
+    wphytomaps.append(wphyto)
 
 #change farming map to charcoal map
 grass.message("Generating charcoal densities.")
@@ -122,12 +129,12 @@ for farmingmap, grazingmap in zip(farmingmaps, grazingmaps):
 
 #clean up temporary maps
 grass.run_command("g.remove", quiet=True, flags='f', type='rast', pattern='Temporary*')
-    
+
 grass.message("Compiling yearly depth changes and raw proxy amounts...")
 l = []
 for i in range(RunLength):
-    elev, delta, phyto, artifacts, charcoal, sdepth = grass.read_command('r.what', map = ",".join((elevmaps[i], deltamaps[i], gphytomaps[i], artifactmaps[i], charcoalmaps[i], depthmaps[i])), separator = ",", coordinates = coor).strip('\n').split(",")[3:9]
-    l.append({'Year': i, 'Elevation': float(elev), 'Soildepth': float(sdepth), 'Delta': float(delta), 'InSitu Grass Phytoliths': float(phyto) / cm2percell, "Scaled Basin-Average Grass Phytoliths": float(avphytos[i]) / cm2percell, "InSitu Charcoal": float(charcoal) / cm2percell, "Scaled Basin-Average Charcoal":float(averagecharc[i]) / cm2percell, 'Artifacts': int(artifacts) / cm2percell})
+    elev, delta, gphyto, wphyto, artifacts, charcoal, sdepth = grass.read_command('r.what', map = ",".join((elevmaps[i], deltamaps[i], gphytomaps[i], wphytomaps[i], artifactmaps[i], charcoalmaps[i], depthmaps[i])), separator = ",", coordinates = coor).strip('\n').split(",")[3:10]
+    l.append({'Year': i, 'Elevation': float(elev), 'Soildepth': float(sdepth), 'Delta': float(delta), 'InSitu Grass Phytoliths': float(gphyto) / cm2percell, 'InSitu Wood Phytoliths': float(wphyto) / cm2percell, "Scaled Basin-Average Grass Phytoliths": float(avgphytos[i]) / cm2percell, "Scaled Basin-Average Wood Phytoliths": float(avwphytos[i]) / cm2percell, "InSitu Charcoal": float(charcoal) / cm2percell, "Scaled Basin-Average Charcoal":float(averagecharc[i]) / cm2percell, 'Artifacts': int(artifacts) / cm2percell})
 layers = pd.DataFrame(l)
 initdepth = layers.Soildepth[0]
 layers["Cumsum"] = layers.Delta.cumsum()+initdepth #calculate cumulative sum
@@ -200,7 +207,7 @@ for idx, row in layers.iterrows():
     if row['Delta'] > 0: # Deposition occured, so accumulate proxies and depth
         numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to add
         for depth in range(numdepths): # now add the correct proportion of proxy to each interval
-            proxylist.append([row['InSitu Grass Phytoliths']/numdepths, row['Scaled Basin-Average Grass Phytoliths']/numdepths, row['InSitu Charcoal']/numdepths, row['Scaled Basin-Average Charcoal']/numdepths, row['Artifacts']/numdepths])
+            proxylist.append([row['InSitu Grass Phytoliths']/numdepths, row['InSitu Wood Phytoliths']/numdepths, row['Scaled Basin-Average Grass Phytoliths']/numdepths, row['Scaled Basin-Average Wood Phytoliths']/numdepths, row['InSitu Charcoal']/numdepths, row['Scaled Basin-Average Charcoal']/numdepths, row['Artifacts']/numdepths])
     elif row['Delta'] < 0: # Erosion occured, so remove proxies and depth
         numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to remove
         for depth in range(abs(numdepths)): # now remove the correct number of intervals, including all their proxy data
@@ -213,7 +220,7 @@ for idx, row in layers.iterrows():
 for idx, i in enumerate(proxylist):
     i.append((idx+1)*-1*baseinterval) # add cumualtive depth intervals
 proxyframe = pd.DataFrame(np.array(proxylist)) # convert to dataframe via np array
-labels = ["Grass Phyt, insitu", "Grass Phyt, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
+labels = ["Grass Phyt, insitu", "Wood Phyt, insitu", "Grass Phyt, bas. av.", "Wood Pht, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
 proxyframe.columns = labels # add column labels to proxyframe
 proxyframe.to_csv("%s_raw_proxies.csv" % outprefix) # save out the raw proxies dataframe to csv file
 
