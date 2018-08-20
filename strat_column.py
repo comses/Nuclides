@@ -23,7 +23,7 @@ if int(grass.version()['version'].split('.')[0]) < 7:
     grass.fatal("You must be in GRASS version 7.0.1 or higher to run this script!")
 import tempfile, math
 
-    
+
 ################# SET UP THESE VALUES ####################
 ##########################################################
 RunLength = 300 #number of years the simulation ran for
@@ -39,11 +39,12 @@ proxyscale ='linear' # Scale for the x axis of the output proxies plot. 'log' or
 grass.message("Gathering data files...")
 mapset = grass.read_command('g.mapset', flags = 'lp').strip('\n')#grab mapset to constrain searches
 elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Elevation_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
-depthmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Soil_Depth_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')  
-deltamaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*ED_rate*' % prefix, separator=',', mapset = mapset).strip().split(',')  
+depthmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Soil_Depth_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+deltamaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*ED_rate*' % prefix, separator=',', mapset = mapset).strip().split(',')
 lcovmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Landcover_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 farmingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Farming_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 grazingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Gazing_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+firemaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Natural_Fires_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 # we will need the initial landcover map for the charcoal calcualtions.
 initlcov = "init_veg@PERMANENT"
 basinmap = "TEST_BASIN" # We are just gonna use a single overarching basin map for now.
@@ -98,14 +99,14 @@ recodeto = tempfile.NamedTemporaryFile()
 # set up loop to create charcoal maps
 charcoalmaps = []
 averagecharc = []
-for n, lcovmap, farmingmap in zip(range(len(lcovmaps)),lcovmaps, farmingmaps):
+for n, lcovmap, farmingmap, grazingmap, firemap in zip(range(len(lcovmaps)),lcovmaps, farmingmaps, grazingmaps, firemaps):
     charcoalmap = "%s_insitu_charcoal_%s" % (outprefix,lcovmap.split('_Landcover')[0])
     # The code below uses graphing functions in mapcalc to translate veg type into above ground biomass (kg/sq m) and percentage of biomass that becomes charcoal, and then multiplying those two to find amount of charcoal produced (kg/sqm), and converting that into pieces per cell (note these are only for larger macro-charcoal between 400-600um). This last conversion is: (Kg charcoal * %charcoal in large size class * density of charcoal) / ( conversion rate from volume to #spherical particles * conversion from kg to g) .
     if n == 0:
         lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
     else:
         lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
-    grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}), 0, ((biomass * pcntcharc * 0.0267 * 0.5) / (0.00011304 * 1000))) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap)
+    grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}) & isnull(${firemap}), 0, ((biomass * pcntcharc * 0.0267 * 0.5) / (0.00011304 * 1000))) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
     lastlcov = lcovmap #save current lcov to use next year
     charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
     charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
@@ -114,8 +115,8 @@ for n, lcovmap, farmingmap in zip(range(len(lcovmaps)),lcovmaps, farmingmaps):
 #        averagecharc.append(float(charcstats['mean']) * scalar)
 #    else: # basin is very small, and/or no upstream charcoal deposits. This would create an empty stats dict, so just use 0 to avoid "KeyError" troubles
 #        averagecharc.append(0)
-        
-    
+
+
 recodeto.close() # close and delete temporary rules file
 #change impact maps to artifact densities
 grass.message('Generating artifact densities.')
@@ -142,12 +143,12 @@ layers.set_index('Year', inplace = True) # first move the "year" column to be th
 layers.T.to_csv("%s_CumED.csv" % outprefix)
 
 
-#set up new dataframe to contain results and run a loop through the stratagraphic data to make "real" layers 
+#set up new dataframe to contain results and run a loop through the stratagraphic data to make "real" layers
 grass.message("Deriving temporal stratigraphy...")
 stratigraphy = pd.DataFrame({y:np.arange(RunLength+1) for y in ["Year"]}) #set up new dataframe to contain results of stratigraphic simulation
 stratigraphy.set_index('Year', inplace = True) # first move the "year" column to be the index
 stratigraphy["Stratum0"] = initdepth # add a column for the base soil (stratum 0)
-for idx, row in layers.iterrows(): # run a loop through the stratagraphic data to make "real" layers 
+for idx, row in layers.iterrows(): # run a loop through the stratagraphic data to make "real" layers
     if idx == 0: # Set up the pre-run soil-depth
         stratigraphy["Stratum0"][idx:RunLength+1] = initdepth # save current depth at this year for the stratum (and fill forward in time)
         old_delta = 0 # set up "old_delta" variable
@@ -197,7 +198,7 @@ fig.subplots_adjust(left=0.065, right=0.90)
 sns.despine(fig)
 plt.savefig("%s_stratigraphy_stackedbar.png" % outprefix, dpi=300)
 plt.close()
-mbsstrat = (stratigraphy - stratigraphy.ix[:,stratum][RunLength]) # NOW change the stratigraphy to depth below surface, 
+mbsstrat = (stratigraphy - stratigraphy.ix[:,stratum][RunLength]) # NOW change the stratigraphy to depth below surface,
 mbsstrat.T.to_csv("%s_stratigraphy.csv" % outprefix) # transpose, and save it out to a file
 
 #loop through the data to make a final proxy count
