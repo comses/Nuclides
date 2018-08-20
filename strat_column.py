@@ -106,7 +106,7 @@ for n, lcovmap, farmingmap, grazingmap, firemap in zip(range(len(lcovmaps)),lcov
         lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
     else:
         lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
-    grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}) & isnull(${firemap}), 0, ((biomass * pcntcharc * 0.0267 * 0.5) / (0.00011304 * 1000))) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
+    grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}) && isnull(${firemap}), if(isnull(${grazingmap}), 0, ((biomass * pcntcharc * 0.0267 * 0.5 * 0.05) / (0.00011304 * 1000))), ((biomass * pcntcharc * 0.0267 * 0.5) / (0.00011304 * 1000))) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
     lastlcov = lcovmap #save current lcov to use next year
     charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
     charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
