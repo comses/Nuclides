@@ -26,11 +26,11 @@ import tempfile, math
 
 ################# SET UP THESE VALUES ####################
 ##########################################################
-RunLength = 300 #number of years the simulation ran for
+RunLength = 500 #number of years the simulation ran for
 digits = 3 #number of digits that simulation year numbers are padded to
-prefix = "120psf"
-coor = "727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
-outprefix = "P2" # A prefix for all output files.
+prefix = "woodland_fires"
+coor = "701630.980259, 4326953.53628"#"727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
+outprefix = "NV7" # A prefix for all output files.
 baseinterval = 0.001 # the depth intervals at which to collect proxies (default is 1mm)
 dispinterval = 100 # the number of depth intervals to amalgamate as the interval for the plot of proxies at the last year (default is 10cm)
 miny = -1.25 # optional minimum y value for the output stratigraphy plot
@@ -44,10 +44,10 @@ deltamaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*ED
 lcovmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Landcover_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 farmingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Farming_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 grazingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Gazing_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
-firemaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Natural_Fires_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+firemaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Natural_Fires_map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 # we will need the initial landcover map for the charcoal calcualtions.
-initlcov = "init_veg@PERMANENT"
-basinmap = "TEST_BASIN" # We are just gonna use a single overarching basin map for now.
+initlcov = "INIT_Woodland@catchments"
+basinmap = "sp_nv7_basin@NV07" # We are just gonna use a single overarching basin map for now.
 #############################################################
 #############################################################
 
@@ -77,7 +77,8 @@ grass.message('Generating phytolith densities.')
 #sphytomaps = []
 gphytomaps = []
 wphytomaps = []
-avphytos = []
+avgphytos = []
+avwphytos = []
 for lcovmap, elevmap, deltamap in zip(lcovmaps, elevmaps, deltamaps):
     #Grasses DATA come from Fredlund and Tieszen 1994 for mixed grassland. Annual production of 2g/m2 of opaline grass phytoliths.
     #Woody phytoliths estimated by assuming woody vegetation produces ~2 orders of magnitude fewer phytoliths than grasses, based on data from Irene
