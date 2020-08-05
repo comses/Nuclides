@@ -26,11 +26,11 @@ import tempfile, math
 
 ################# SET UP THESE VALUES ####################
 ##########################################################
-RunLength = 300 #number of years the simulation ran for
+RunLength = 500 #number of years the simulation ran for
 digits = 3 #number of digits that simulation year numbers are padded to
-prefix = "120psf"
-coor = "727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
-outprefix = "P2" # A prefix for all output files.
+prefix = "woodland_fires"
+coor = "701630.980259, 4326953.53628"#"727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
+outprefix = "NV7" # A prefix for all output files.
 baseinterval = 0.001 # the depth intervals at which to collect proxies (default is 1mm)
 dispinterval = 100 # the number of depth intervals to amalgamate as the interval for the plot of proxies at the last year (default is 10cm)
 miny = -1.25 # optional minimum y value for the output stratigraphy plot
@@ -44,10 +44,10 @@ deltamaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*ED
 lcovmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Landcover_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 farmingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Farming_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 grazingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Gazing_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
-firemaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Natural_Fires_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+firemaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Natural_Fires_map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 # we will need the initial landcover map for the charcoal calcualtions.
-initlcov = "init_veg@PERMANENT"
-basinmap = "TEST_BASIN" # We are just gonna use a single overarching basin map for now.
+initlcov = "INIT_Woodland@catchments"
+basinmap = "sp_nv7_basin@NV07" # We are just gonna use a single overarching basin map for now.
 #############################################################
 #############################################################
 
@@ -77,7 +77,8 @@ grass.message('Generating phytolith densities.')
 #sphytomaps = []
 gphytomaps = []
 wphytomaps = []
-avphytos = []
+avgphytos = []
+avwphytos = []
 for lcovmap, elevmap, deltamap in zip(lcovmaps, elevmaps, deltamaps):
     #Grasses DATA come from Fredlund and Tieszen 1994 for mixed grassland. Annual production of 2g/m2 of opaline grass phytoliths.
     #Woody phytoliths estimated by assuming woody vegetation produces ~2 orders of magnitude fewer phytoliths than grasses, based on data from Irene
@@ -143,7 +144,7 @@ layers.set_index('Year', inplace = True) # first move the "year" column to be th
 layers.T.to_csv("%s_CumED.csv" % outprefix)
 
 
-#set up new dataframe to contain results and run a loop through the stratagraphic data to make "real" layers
+#set up new dataframe to contain results and run a loop through the stratigraphic data to make "real" layers
 grass.message("Deriving temporal stratigraphy...")
 stratigraphy = pd.DataFrame({y:np.arange(RunLength+1) for y in ["Year"]}) #set up new dataframe to contain results of stratigraphic simulation
 stratigraphy.set_index('Year', inplace = True) # first move the "year" column to be the index
@@ -201,6 +202,8 @@ plt.close()
 mbsstrat = (stratigraphy - stratigraphy.ix[:,stratum][RunLength]) # NOW change the stratigraphy to depth below surface,
 mbsstrat.T.to_csv("%s_stratigraphy.csv" % outprefix) # transpose, and save it out to a file
 
+
+
 #loop through the data to make a final proxy count
 grass.message("Accumulating proxy-data by depth increments...")
 proxylist = [] # set up a list to contain results
@@ -218,8 +221,9 @@ for idx, row in layers.iterrows():
                 pass
     else: # no change happened, so pass on by
         pass
+proxylist.reverse() # reverse the proxylist so earlier levels are at the bottom
 for idx, i in enumerate(proxylist):
-    i.append((idx+1)*-1*baseinterval) # add cumualtive depth intervals
+    i.append((idx+1)*-1*baseinterval) # add cumulative depth intervals
 proxyframe = pd.DataFrame(np.array(proxylist)) # convert to dataframe via np array
 labels = ["Grass Phyt, insitu", "Wood Phyt, insitu", "Grass Phyt, bas. av.", "Wood Pht, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
 proxyframe.columns = labels # add column labels to proxyframe
@@ -231,7 +235,7 @@ accumprox.drop('Depth', axis=1, inplace=True) # the depth column is now bad due 
 accumprox['Depth'] = np.arange(1,len(accumprox)+1)*(-1*baseinterval*dispinterval)  # Make new depth column with corrected values.
 # make a plot of the proxies with depth
 deletethis = labels.pop() # just peel off the Depth label so we can use the rest of the labels for the plots.
-xlabs = ["g/cc", "g/cc", "pieces/cc", "pieces/cc", "pieces/cc"] # labels for the xaxes in the plot. Need to have same number as there are plots.
+xlabs = ["g/cc", "g/cc", "g/cc", "g/cc", "pieces/cc", "pieces/cc"] # labels for the xaxes in the plot. Need to have same number as there are plots.
 sns.set_style("ticks")
 sns.set_context("poster", font_scale = 1.1)
 
