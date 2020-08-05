@@ -144,7 +144,7 @@ layers.set_index('Year', inplace = True) # first move the "year" column to be th
 layers.T.to_csv("%s_CumED.csv" % outprefix)
 
 
-#set up new dataframe to contain results and run a loop through the stratagraphic data to make "real" layers
+#set up new dataframe to contain results and run a loop through the stratigraphic data to make "real" layers
 grass.message("Deriving temporal stratigraphy...")
 stratigraphy = pd.DataFrame({y:np.arange(RunLength+1) for y in ["Year"]}) #set up new dataframe to contain results of stratigraphic simulation
 stratigraphy.set_index('Year', inplace = True) # first move the "year" column to be the index
@@ -202,6 +202,8 @@ plt.close()
 mbsstrat = (stratigraphy - stratigraphy.ix[:,stratum][RunLength]) # NOW change the stratigraphy to depth below surface,
 mbsstrat.T.to_csv("%s_stratigraphy.csv" % outprefix) # transpose, and save it out to a file
 
+
+
 #loop through the data to make a final proxy count
 grass.message("Accumulating proxy-data by depth increments...")
 proxylist = [] # set up a list to contain results
@@ -219,8 +221,9 @@ for idx, row in layers.iterrows():
                 pass
     else: # no change happened, so pass on by
         pass
+proxylist.reverse() # reverse the proxylist so earlier levels are at the bottom
 for idx, i in enumerate(proxylist):
-    i.append((idx+1)*-1*baseinterval) # add cumualtive depth intervals
+    i.append((idx+1)*-1*baseinterval) # add cumulative depth intervals
 proxyframe = pd.DataFrame(np.array(proxylist)) # convert to dataframe via np array
 labels = ["Grass Phyt, insitu", "Wood Phyt, insitu", "Grass Phyt, bas. av.", "Wood Pht, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
 proxyframe.columns = labels # add column labels to proxyframe
@@ -232,7 +235,7 @@ accumprox.drop('Depth', axis=1, inplace=True) # the depth column is now bad due 
 accumprox['Depth'] = np.arange(1,len(accumprox)+1)*(-1*baseinterval*dispinterval)  # Make new depth column with corrected values.
 # make a plot of the proxies with depth
 deletethis = labels.pop() # just peel off the Depth label so we can use the rest of the labels for the plots.
-xlabs = ["g/cc", "g/cc", "pieces/cc", "pieces/cc", "pieces/cc"] # labels for the xaxes in the plot. Need to have same number as there are plots.
+xlabs = ["g/cc", "g/cc", "g/cc", "g/cc", "pieces/cc", "pieces/cc"] # labels for the xaxes in the plot. Need to have same number as there are plots.
 sns.set_style("ticks")
 sns.set_context("poster", font_scale = 1.1)
 
