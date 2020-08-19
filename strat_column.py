@@ -79,13 +79,18 @@ gphytomaps = []
 wphytomaps = []
 avgphytos = []
 avwphytos = []
-for lcovmap, elevmap, deltamap in zip(lcovmaps, elevmaps, deltamaps):
-    #Grasses DATA come from Fredlund and Tieszen 1994 for mixed grassland. Annual production of 2g/m2 of opaline grass phytoliths.
-    #Woody phytoliths estimated by assuming woody vegetation produces ~2 orders of magnitude fewer phytoliths than grasses, based on data from Irene
+for n, lcovmap, elevmap, deltamap in zip(range(len(lcovmaps)), lcovmaps, elevmaps, deltamaps):
+    #Grasses DATA come from Fredlund and Tieszen 1994 for mixed grassland: annual production of 2g/m2 of opaline grass phytoliths.
+    #Woody phytoliths estimated by assuming woody vegetation produces ~2 orders of magnitude fewer phytoliths than grasses, based on empirical data from Irene Esteban
     gphyto = "%s_insitu_grassphytos_%s" % (outprefix,lcovmap.split('_Landcover')[0])
-    wphyto = "%s_insitu_woodphytos_%s" % (outprefix,lcovmap.split('_Landcover')[0]) # note for Isaac, I'm not sure what the above line does, so I just repeat it here
-    grass.mapcalc("${phytomap} = eval(a=nsres()*ewres()*2, b=graph(${lcovmap}, 0,0.1, 5,1, 50,0.4), a*b)", overwrite = True, quiet = True, phytomap = gphyto, lcovmap = lcovmap) # modify yearly phytolith deposition for pure grassland by the actual landcover mixture (perecntage of grass in succession stage), and then scale to size of raster cel. This map is then g/cell of grass phytos.
-    grass.mapcalc("${phytomap} = eval(a=nsres()*ewres()*0.02, b=graph(${lcovmap}, 0,0, 7,0.05, 18,0.33, 35,0.37, 50,1), a*b)", overwrite = True, quiet = True, phytomap = wphyto, lcovmap = lcovmap) # ditto for woody phytoliths
+    wphyto = "%s_insitu_woodphytos_%s" % (outprefix,lcovmap.split('_Landcover')[0])
+    if n == 0:
+        lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
+    else:
+        lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
+    grass.mapcalc("${phytomap} = eval(a=nsres()*ewres()*2, b=graph(${lcovmap}, 0,0.1, 5,1, 50,0.4), a*b)", overwrite = True, quiet = True, phytomap = gphyto, lcovmap = lc) # modify yearly phytolith deposition for pure grassland by the actual landcover mixture (perecntage of grass in succession stage), and then scale to size of raster cel. This map is then g/cell of grass phytos.
+    grass.mapcalc("${phytomap} = eval(a=nsres()*ewres()*0.02, b=graph(${lcovmap}, 0,0, 7,0.05, 18,0.33, 35,0.37, 50,1), a*b)", overwrite = True, quiet = True, phytomap = wphyto, lcovmap = lc) # ditto for woody phytoliths
+    lastlcov = lcovmap #save current lcov to use next year
     gphytostats = grass.parse_command('r.univar', flags='g', map=gphyto, zones=basinmap) # grab stats for average phytolith concentration
     wphytostats = grass.parse_command('r.univar', flags='g', map=wphyto, zones=basinmap) # grab stats for average phytolith concentration
     avgphytos.append(float(gphytostats['mean']) * scalar)
@@ -95,7 +100,7 @@ for lcovmap, elevmap, deltamap in zip(lcovmaps, elevmaps, deltamaps):
 
 #change farming map to charcoal map
 grass.message("Generating charcoal densities.")
-#NOTE: The following has landcover values HARDCODED to Mediterranean values. When reparammeterizing for non-Mediterranean environments, these will need to be recoded.
+#NOTE: The following has landcover values HARDCODED to Mediterranean values. When reparameterizing for non-Mediterranean environments, these will need to be recoded.
 recodeto = tempfile.NamedTemporaryFile()
 # set up loop to create charcoal maps
 charcoalmaps = []
