@@ -3,7 +3,7 @@ try:
 except:
     exit("You must have GRASS GIS installed, and be in a GRASS session to run this script")
 
-grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'RASTER3D_MASK')                         
+grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'RASTER3D_MASK')
 grass.run_command('r.mask', flags = 'r')
 coor = '725763.609242,4284801.3547' # "727195.790391, 4285699.45461" # location(s) at which to take a virtual sediment core
 
@@ -57,7 +57,7 @@ grass.mapcalc3d('vol_mask = if(mask_3d == 1, 1, null())', overwrite = True)
 grass.run_command('r3.mask', map = 'vol_mask')
 
 #cleanup maps
-grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'mask_3d')                         
+grass.run_command('g.remove', flags = 'f', type = 'raster_3d', name = 'mask_3d')
 
 
 # increase the vertical resolution
@@ -76,7 +76,7 @@ grass.mapcalc3d('depth3d = elev3d - z()', overwrite = True)
 # Setup parameters
 P_0 = 4.49		# production rate of Beryllium-10 in quartz at sea level [at/g/yr] after Stone, 1999.
 ltlambda = np.log(2) / 1.5e6 # decay constant
-L = 160 	# absorption mean-free path (attentuation length)  [g/cm2]   
+L = 160 	# absorption mean-free path (attentuation length)  [g/cm2]
 p = 2.6 	# density of overburden [ g/cm3]
 
 #create a dummy map that has the surface elevation for all cells
@@ -100,6 +100,3 @@ erosionstats = grass.parse_command('r.univar', flags='g', map=levol_ED_0001, zon
 
 # calculate topo shielding using r.skyview
 #r.skyview input=DEM output=shielding ndir=16
-
-
-
