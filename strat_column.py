@@ -35,6 +35,7 @@ baseinterval = 0.001 # the depth intervals at which to collect proxies (default 
 dispinterval = 100 # the number of depth intervals to amalgamate as the interval for the plot of proxies at the last year (default is 10cm)
 miny = -1.25 # optional minimum y value for the output stratigraphy plot
 proxyscale ='linear' # Scale for the x axis of the output proxies plot. 'log' or 'linear'
+anthropogenic = True # include anthropogenic data (i.e. farming, grazing, and artifacts)
 ########
 grass.message("Gathering data files...")
 mapset = grass.read_command('g.mapset', flags = 'lp').strip('\n')#grab mapset to constrain searches
@@ -105,33 +106,48 @@ recodeto = tempfile.NamedTemporaryFile()
 # set up loop to create charcoal maps
 charcoalmaps = []
 averagecharc = []
-for n, lcovmap, farmingmap, grazingmap, firemap in zip(range(len(lcovmaps)),lcovmaps, farmingmaps, grazingmaps, firemaps):
-    charcoalmap = "%s_insitu_charcoal_%s" % (outprefix,lcovmap.split('_Landcover')[0])
-    # The code below uses graphing functions in mapcalc to translate veg type into above ground biomass (kg/sq m) and percentage of biomass that becomes charcoal, and then multiplying those two to find amount of charcoal produced (kg/sqm), and converting that into pieces per cell (note these are only for larger macro-charcoal between 400-600um). This last conversion is: (Kg charcoal * %charcoal in large size class * density of charcoal) / ( conversion rate from volume to #spherical particles * conversion from kg to g) .
-    if n == 0:
-        lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
-    else:
-        lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
-    grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}) && isnull(${firemap}), if(isnull(${grazingmap}), 0, ((biomass * pcntcharc * 0.5 * 0.05) / (0.00011304 * 10))), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10))) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
-    lastlcov = lcovmap #save current lcov to use next year
-    charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
-    charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
-    averagecharc.append(float(charcstats['mean']) * scalar)
-#    if charcstats.has_key('mean'):
-#        averagecharc.append(float(charcstats['mean']) * scalar)
-#    else: # basin is very small, and/or no upstream charcoal deposits. This would create an empty stats dict, so just use 0 to avoid "KeyError" troubles
-#        averagecharc.append(0)
+if anthropogenic:
+    for n, lcovmap, farmingmap, grazingmap, firemap in zip(range(len(lcovmaps)), lcovmaps, farmingmaps, grazingmaps, firemaps):
+        charcoalmap = "%s_insitu_charcoal_%s" % (outprefix, lcovmap.split('_Landcover')[0])
+        # The code below uses graphing functions in mapcalc to translate veg type into above ground biomass (kg/sq m) and percentage of biomass that becomes charcoal, and then multiplying those two to find amount of charcoal produced (kg/sqm), and converting that into pieces per cell (note these are only for larger macro-charcoal between 400-600um). This last conversion is: (Kg charcoal * %charcoal in large size class * density of charcoal) / ( conversion rate from volume to #spherical particles * conversion from kg to g) .
+        if n == 0:
+            lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
+        else:
+            lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
+        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}) && isnull(${firemap}), if(isnull(${grazingmap}), 0, ((biomass * pcntcharc * 0.5 * 0.05) * 1000 / 0.00011304)), ((biomass * pcntcharc * 0.5) * 1000 / 0.00011304)) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
+        lastlcov = lcovmap #save current lcov to use next year
+        charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
+        charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
+        averagecharc.append(float(charcstats['mean']) * scalar)
+    #    if charcstats.has_key('mean'):
+    #        averagecharc.append(float(charcstats['mean']) * scalar)
+    #    else: # basin is very small, and/or no upstream charcoal deposits. This would create an empty stats dict, so just use 0 to avoid "KeyError" troubles
+    #        averagecharc.append(0)
+else:
+    for n, lcovmap, firemap in zip(range(len(lcovmaps)),lcovmaps, firemaps):
+        charcoalmap = "%s_insitu_charcoal_%s" % (outprefix,lcovmap.split('_Landcover')[0])
+        # The code below uses graphing functions in mapcalc to translate veg type into above ground biomass (kg/sq m) and percentage of biomass that becomes charcoal, and then multiplying those two to find amount of charcoal produced (kg/sqm), and converting that into pieces per cell (note these are only for larger macro-charcoal between 400-600um). This last conversion is: (Kg charcoal * %charcoal in large size class * density of charcoal) / ( conversion rate from volume to #spherical particles * conversion from kg to g) .
+        if n == 0:
+            lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
+        else:
+            lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
+        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10)))", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
+        lastlcov = lcovmap #save current lcov to use next year
+        charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
+        charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
+        averagecharc.append(float(charcstats['mean']) * scalar)
 
 
 recodeto.close() # close and delete temporary rules file
 #change impact maps to artifact densities
-grass.message('Generating artifact densities.')
-artifactmaps = []
-for farmingmap, grazingmap in zip(farmingmaps, grazingmaps):
-    grass.run_command("r.surf.random", quiet=True, overwrite=True, flags='i', max=2, output="Temporary_random_surface")
-    artifactmap = "%s_Artifact_densities_%s" % (outprefix,farmingmap.split('_Farming_Impacts_Map')[0])
-    grass.mapcalc("${artifactmap}=if(isnull(${farmingmap}) && isnull(${grazingmap}), 0, if(isnull(${grazingmap}), ${randmap}+2, ${randmap}))", overwrite=True, quiet=True, artifactmap=artifactmap, farmingmap=farmingmap, grazingmap=grazingmap, randmap="Temporary_random_surface")
-    artifactmaps.append(artifactmap)
+if anthropogenic:
+    grass.message('Generating artifact densities.')
+    artifactmaps = []
+    for farmingmap, grazingmap in zip(farmingmaps, grazingmaps):
+        grass.run_command("r.surf.random", quiet=True, overwrite=True, flags='i', max=2, output="Temporary_random_surface")
+        artifactmap = "%s_Artifact_densities_%s" % (outprefix,farmingmap.split('_Farming_Impacts_Map')[0])
+        grass.mapcalc("${artifactmap}=if(isnull(${farmingmap}) && isnull(${grazingmap}), 0, if(isnull(${grazingmap}), ${randmap}+2, ${randmap}))", overwrite=True, quiet=True, artifactmap=artifactmap, farmingmap=farmingmap, grazingmap=grazingmap, randmap="Temporary_random_surface")
+        artifactmaps.append(artifactmap)
 #now build a pandas dataframe to hold the yearly information about elevation changes and various proxy information, etc.
 
 #clean up temporary maps
@@ -139,9 +155,14 @@ grass.run_command("g.remove", quiet=True, flags='f', type='rast', pattern='Tempo
 
 grass.message("Compiling yearly depth changes and raw proxy amounts...")
 l = []
-for i in range(RunLength):
-    elev, delta, gphyto, wphyto, artifacts, charcoal, sdepth = grass.read_command('r.what', map = ",".join((elevmaps[i], deltamaps[i], gphytomaps[i], wphytomaps[i], artifactmaps[i], charcoalmaps[i], depthmaps[i])), separator = ",", coordinates = coor).strip('\n').split(",")[3:10]
-    l.append({'Year': i, 'Elevation': float(elev), 'Soildepth': float(sdepth), 'Delta': float(delta), 'InSitu Grass Phytoliths': float(gphyto) / cm2percell, 'InSitu Wood Phytoliths': float(wphyto) / cm2percell, "Scaled Basin-Average Grass Phytoliths": float(avgphytos[i]) / cm2percell, "Scaled Basin-Average Wood Phytoliths": float(avwphytos[i]) / cm2percell, "InSitu Charcoal": float(charcoal) / cm2percell, "Scaled Basin-Average Charcoal":float(averagecharc[i]) / cm2percell, 'Artifacts': int(artifacts) / cm2percell})
+if anthropogenic:
+    for i in range(RunLength):
+        elev, delta, gphyto, wphyto, artifacts, charcoal, sdepth = grass.read_command('r.what', map = ",".join((elevmaps[i], deltamaps[i], gphytomaps[i], wphytomaps[i], artifactmaps[i], charcoalmaps[i], depthmaps[i])), separator = ",", coordinates = coor).strip('\n').split(",")[3:10]
+        l.append({'Year': i, 'Elevation': float(elev), 'Soildepth': float(sdepth), 'Delta': float(delta), 'InSitu Grass Phytoliths': float(gphyto) / cm2percell, 'InSitu Wood Phytoliths': float(wphyto) / cm2percell, "Scaled Basin-Average Grass Phytoliths": float(avgphytos[i]) / cm2percell, "Scaled Basin-Average Wood Phytoliths": float(avwphytos[i]) / cm2percell, "InSitu Charcoal": float(charcoal) / cm2percell, "Scaled Basin-Average Charcoal":float(averagecharc[i]) / cm2percell, 'Artifacts': int(artifacts) / cm2percell})
+else:
+    for i in range(RunLength):
+        elev, delta, gphyto, wphyto, charcoal, sdepth = grass.read_command('r.what', map = ",".join((elevmaps[i], deltamaps[i], gphytomaps[i], wphytomaps[i], charcoalmaps[i], depthmaps[i])), separator = ",", coordinates = coor).strip('\n').split(",")[3:10]
+        l.append({'Year': i, 'Elevation': float(elev), 'Soildepth': float(sdepth), 'Delta': float(delta), 'InSitu Grass Phytoliths': float(gphyto) / cm2percell, 'InSitu Wood Phytoliths': float(wphyto) / cm2percell, "Scaled Basin-Average Grass Phytoliths": float(avgphytos[i]) / cm2percell, "Scaled Basin-Average Wood Phytoliths": float(avwphytos[i]) / cm2percell, "InSitu Charcoal": float(charcoal) / cm2percell, "Scaled Basin-Average Charcoal":float(averagecharc[i]) / cm2percell})
 layers = pd.DataFrame(l)
 initdepth = layers.Soildepth[0]
 layers["Cumsum"] = layers.Delta.cumsum()+initdepth #calculate cumulative sum
@@ -216,7 +237,10 @@ for idx, row in layers.iterrows():
     if row['Delta'] > 0: # Deposition occured, so accumulate proxies and depth
         numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to add
         for depth in range(numdepths): # now add the correct proportion of proxy to each interval
-            proxylist.append([row['InSitu Grass Phytoliths']*10/numdepths, row['InSitu Wood Phytoliths']*10/numdepths, row['Scaled Basin-Average Grass Phytoliths']*10/numdepths, row['Scaled Basin-Average Wood Phytoliths']*10/numdepths, row['InSitu Charcoal']*10/numdepths, row['Scaled Basin-Average Charcoal']*10/numdepths, row['Artifacts']*10/numdepths]) #*10 converts to g or pieces per cc
+            if anthropogenic:
+                proxylist.append([row['InSitu Grass Phytoliths']*10/numdepths, row['InSitu Wood Phytoliths']*10/numdepths, row['Scaled Basin-Average Grass Phytoliths']*10/numdepths, row['Scaled Basin-Average Wood Phytoliths']*10/numdepths, row['InSitu Charcoal']*10/numdepths, row['Scaled Basin-Average Charcoal']*10/numdepths, row['Artifacts']*10/numdepths]) #*10 converts to g or pieces per cc
+            else:
+                proxylist.append([row['InSitu Grass Phytoliths']*10/numdepths, row['InSitu Wood Phytoliths']*10/numdepths, row['Scaled Basin-Average Grass Phytoliths']*10/numdepths, row['Scaled Basin-Average Wood Phytoliths']*10/numdepths, row['InSitu Charcoal']*10/numdepths, row['Scaled Basin-Average Charcoal']*10/numdepths]) #*10 converts to g or pieces per cc
     elif row['Delta'] < 0: # Erosion occured, so remove proxies and depth
         numdepths = int(row['Delta'] / baseinterval) # findout how many depth intervals to remove
         for depth in range(abs(numdepths)): # now remove the correct number of intervals, including all their proxy data
@@ -230,7 +254,10 @@ proxylist.reverse() # reverse the proxylist so earlier levels are at the bottom
 for idx, i in enumerate(proxylist):
     i.append((idx+1)*-1*baseinterval) # add cumulative depth intervals
 proxyframe = pd.DataFrame(np.array(proxylist)) # convert to dataframe via np array
-labels = ["Grass Phyt, insitu", "Wood Phyt, insitu", "Grass Phyt, bas. av.", "Wood Pht, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
+if anthropogenic:
+    labels = ["Grass Phyt, insitu", "Wood Phyt, insitu", "Grass Phyt, bas. av.", "Wood Pht, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.","Artifacts", "Depth"] # create some column labels (will also be used in the plot)
+else:
+    labels = ["Grass Phyt, insitu", "Wood Phyt, insitu", "Grass Phyt, bas. av.", "Wood Pht, bas. av.", "Macrocharcoal, insitu", "Macrocharcoal, bas. av.", "Depth"]
 proxyframe.columns = labels # add column labels to proxyframe
 proxyframe.to_csv("%s_raw_proxies.csv" % outprefix) # save out the raw proxies dataframe to csv file
 
