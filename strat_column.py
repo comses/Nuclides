@@ -106,7 +106,7 @@ if anthropogenic:
             lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
         else:
             lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
-        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}) && isnull(${firemap}), if(isnull(${grazingmap}), 0, ((biomass * pcntcharc * 0.5 * 0.05) * 1000 / 0.00011304)), ((biomass * pcntcharc * 0.5) * 1000 / 0.00011304)) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
+        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), if(isnull(${farmingmap}) && isnull(${firemap}), if(isnull(${grazingmap}), 0, ((biomass * pcntcharc * 0.5 * 0.05) / (0.00011304 * 10))), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10))) )", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
         lastlcov = lcovmap #save current lcov to use next year
         charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
         charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
@@ -120,9 +120,9 @@ else:
         charcoalmap = "%s_insitu_charcoal_%s" % (outprefix,lcovmap.split('_Landcover')[0])
         # The code below uses graphing functions in mapcalc to translate veg type into above ground biomass (kg/sq m) and percentage of biomass that becomes charcoal, and then multiplying those two to find amount of charcoal produced (kg/sqm), and converting that into pieces per cell (note these are only for larger macro-charcoal between 400-600um). This last conversion is: (Kg charcoal * %charcoal in large size class * density of charcoal) / ( conversion rate from volume to #spherical particles * conversion from kg to g) .
         if n == 0:
-            lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
+            lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg
         else:
-            lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
+            lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg
         grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10)))", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, firemap=firemap)
         lastlcov = lcovmap #save current lcov to use next year
         charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
