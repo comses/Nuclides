@@ -43,9 +43,10 @@ elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Ele
 depthmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Soil_Depth_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 deltamaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*ED_rate*' % prefix, separator=',', mapset = mapset).strip().split(',')
 lcovmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Landcover_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
-farmingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Farming_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
-grazingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Gazing_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 firemaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Natural_Fires_map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+if anthropogenic:
+    farmingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Farming_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+    grazingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Gazing_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 # we will need the initial landcover map for the charcoal calcualtions.
 initlcov = "INIT_Woodland@catchments"
 basinmap = "sp_nv7_basin@NV07" # We are just gonna use a single overarching basin map for now.
@@ -131,7 +132,7 @@ else:
             lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
         else:
             lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
-        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10)))", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
+        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10)))", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, firemap=firemap)
         lastlcov = lcovmap #save current lcov to use next year
         charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
         charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
@@ -148,11 +149,11 @@ if anthropogenic:
         artifactmap = "%s_Artifact_densities_%s" % (outprefix,farmingmap.split('_Farming_Impacts_Map')[0])
         grass.mapcalc("${artifactmap}=if(isnull(${farmingmap}) && isnull(${grazingmap}), 0, if(isnull(${grazingmap}), ${randmap}+2, ${randmap}))", overwrite=True, quiet=True, artifactmap=artifactmap, farmingmap=farmingmap, grazingmap=grazingmap, randmap="Temporary_random_surface")
         artifactmaps.append(artifactmap)
+    #clean up temporary maps
+    grass.run_command("g.remove", quiet=True, flags='f', type='rast', pattern='Temporary*')     
+        
+        
 #now build a pandas dataframe to hold the yearly information about elevation changes and various proxy information, etc.
-
-#clean up temporary maps
-grass.run_command("g.remove", quiet=True, flags='f', type='rast', pattern='Temporary*')
-
 grass.message("Compiling yearly depth changes and raw proxy amounts...")
 l = []
 if anthropogenic:
