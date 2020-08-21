@@ -8,6 +8,14 @@ try:
 except:
     exit("This script requires the Python package \'Pandas\'. Please install that and try again.")
 try:
+    import matplotlib.pyplot as plt
+except:
+    exit("This script requires the Python package \'MatPlotLib\'. Please install that and try again.")
+try:
+    import seaborn as sns
+except:
+    exit("This script requires the Python package \'Seaborn\'. Please install that and try again.")
+try:
     import grass.script as grass
 except:
     exit("You must have GRASS GIS installed, and be in a GRASS session to run this script")
@@ -25,7 +33,8 @@ coor = "701630.980259, 4326953.53628"#"727195.790391, 4285699.45461" # location(
 outprefix = "NV7" # A prefix for all output files.
 baseinterval = 0.001 # the depth intervals at which to collect proxies (default is 1mm)
 dispinterval = 100 # the number of depth intervals to amalgamate as the interval for the plot of proxies at the last year (default is 10cm)
-
+miny = -1.25 # optional minimum y value for the output stratigraphy plot
+proxyscale ='linear' # Scale for the x axis of the output proxies plot. 'log' or 'linear'
 anthropogenic = True # include anthropogenic data (i.e. farming, grazing, and artifacts)
 ########
 grass.message("Gathering data files...")
@@ -34,10 +43,9 @@ elevmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Ele
 depthmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Soil_Depth_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 deltamaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*ED_rate*' % prefix, separator=',', mapset = mapset).strip().split(',')
 lcovmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Landcover_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+farmingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Farming_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
+grazingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Gazing_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 firemaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Natural_Fires_map*' % prefix, separator=',', mapset = mapset).strip().split(',')
-if anthropogenic:
-    farmingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Farming_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
-    grazingmaps = grass.read_command('g.list', flags='m', type='rast', pattern='*%s*Gazing_Impacts_Map*' % prefix, separator=',', mapset = mapset).strip().split(',')
 # we will need the initial landcover map for the charcoal calcualtions.
 initlcov = "INIT_Woodland@catchments"
 basinmap = "sp_nv7_basin@NV07" # We are just gonna use a single overarching basin map for now.
@@ -123,7 +131,7 @@ else:
             lc = initlcov #Calculate the standing biomass map (kg/sq m) based on year 0 veg, but year 1 farming
         else:
             lc = lastlcov #Calculate the standing biomass map (kg/sq m) based on last year veg, but this year's farming
-        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10)))", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, firemap=firemap)
+        grass.mapcalc("${charcoal}=eval(biomass=graph(${lcov}, 0,0, 7,0.1, 18.5,0.66, 35,0.74, 50,1.95), pcntcharc=graph(${lcov}, 0,0, 5,0.0048, 18.5,0.0101, 50,0.0325), ((biomass * pcntcharc * 0.5) / (0.00011304 * 10)))", quiet=True, overwrite=True, lcov=lc, charcoal=charcoalmap, farmingmap=farmingmap, grazingmap=grazingmap, firemap=firemap)
         lastlcov = lcovmap #save current lcov to use next year
         charcoalmaps.append(charcoalmap) # save name of charcoal map to use later
         charcstats = grass.parse_command('r.univar', flags='g', map=charcoalmap, zones=basinmap)
@@ -140,11 +148,11 @@ if anthropogenic:
         artifactmap = "%s_Artifact_densities_%s" % (outprefix,farmingmap.split('_Farming_Impacts_Map')[0])
         grass.mapcalc("${artifactmap}=if(isnull(${farmingmap}) && isnull(${grazingmap}), 0, if(isnull(${grazingmap}), ${randmap}+2, ${randmap}))", overwrite=True, quiet=True, artifactmap=artifactmap, farmingmap=farmingmap, grazingmap=grazingmap, randmap="Temporary_random_surface")
         artifactmaps.append(artifactmap)
-    #clean up temporary maps
-    grass.run_command("g.remove", quiet=True, flags='f', type='rast', pattern='Temporary*')     
-        
-        
 #now build a pandas dataframe to hold the yearly information about elevation changes and various proxy information, etc.
+
+#clean up temporary maps
+grass.run_command("g.remove", quiet=True, flags='f', type='rast', pattern='Temporary*')
+
 grass.message("Compiling yearly depth changes and raw proxy amounts...")
 l = []
 if anthropogenic:
@@ -160,6 +168,7 @@ initdepth = layers.Soildepth[0]
 layers["Cumsum"] = layers.Delta.cumsum()+initdepth #calculate cumulative sum
 layers.set_index('Year', inplace = True) # first move the "year" column to be the index (1-RunLength)
 layers.T.to_csv("%s_CumED.csv" % outprefix)
+
 
 #set up new dataframe to contain results and run a loop through the stratigraphic data to make "real" layers
 grass.message("Deriving temporal stratigraphy...")
@@ -186,8 +195,39 @@ for idx, row in layers.iterrows(): # run a loop through the stratagraphic data t
                 if stratigraphy[key][idx] > currentdepth: # do we need to erode an old stratum?
                     stratigraphy[key][idx:RunLength+1] = currentdepth #erode!
         old_delta = row["Delta"]
+
+#loop is done, make some figs!
+
+#make stacked bar plot
+grass.message("Making temporal stratigraphic plot...")
+plt.ioff() # explicitly set interactive plotting off
+#set up styles with seaborn
+sns.set_style("ticks")
+sns.set_context("poster", font_scale = 1.1)
+colors = sns.cubehelix_palette(stratum+1, start=.75, rot=1.5, dark=.25)
+fig, ax = plt.subplots(figsize=(17, 8)) #make blank plot, and set x and y axis limits to the maximum values in the stratigraphy array, and set a wide aspect ratio for the plot
+ax.set_autoscale_on(False)
+### NOTE: We have to "trick" the plot to get it look like values are measured as below surface. We will actually transform the values to be from below the surface after the plot is made....
+for strat in reversed(range(stratum+1)):
+    ax.bar(range(RunLength+1), stratigraphy.ix[:,strat], width=1, linewidth=0, color=colors[strat], label="Stratum %s" % strat, bottom=0-stratigraphy.ix[:,stratum][RunLength])
+ax.plot(layers.Delta.cumsum()+initdepth-stratigraphy.ix[:,stratum][RunLength], color='0.35', drawstyle="steps-post", linestyle='solid', linewidth=1.5) # plot the outline of where the surface has been
+ax.plot((0, RunLength+1), (0,0), color='black', linestyle='dashed', linewidth=1.75) # plot a horizontal line for modern day surface
+ax.plot((0, RunLength+1), (initdepth-stratigraphy.ix[:,stratum][RunLength],initdepth-stratigraphy.ix[:,stratum][RunLength]), color='0.35', linestyle='dotted', linewidth=1.75) # plot a horizontal line for original surface
+ax.text(5, 0.02, "Final Surface", bbox=dict(facecolor='white', alpha=0.25))# add lables for the horizontal lines
+ax.text(5, initdepth-stratigraphy.ix[:,stratum][RunLength] + 0.02, "Initial Surface",bbox=dict(facecolor='white', alpha=0.25))
+ax.locator_params(nbins = 8)
+ax.set_xlim(0,RunLength+1)
+ax.set_ylim(miny,np.amax(np.amax(stratigraphy))-stratigraphy.ix[:,stratum][RunLength])
+plt.xlabel('Year')
+plt.ylabel('Depth below last surface (m)')
+ax.legend(loc='center left', bbox_to_anchor=(1.015, 0.5), fontsize='small', frameon='True', shadow='True', fancybox='True')
+fig.subplots_adjust(left=0.065, right=0.90)
+sns.despine(fig)
+plt.savefig("%s_stratigraphy_stackedbar.png" % outprefix, dpi=300)
+plt.close()
 mbsstrat = (stratigraphy - stratigraphy.ix[:,stratum][RunLength]) # NOW change the stratigraphy to depth below surface,
 mbsstrat.T.to_csv("%s_stratigraphy.csv" % outprefix) # transpose, and save it out to a file
+
 
 
 #loop through the data to make a final proxy count
@@ -221,11 +261,60 @@ else:
 proxyframe.columns = labels # add column labels to proxyframe
 proxyframe.to_csv("%s_raw_proxies.csv" % outprefix) # save out the raw proxies dataframe to csv file
 
-
-grass.message("Creating binned proxy data...")
+grass.message("Creating proxy depth plot...")
 accumprox = proxyframe.groupby(np.arange(len(proxyframe))//dispinterval).sum() # aggregate data to the binned display interval (for the plot)
 accumprox.drop('Depth', axis=1, inplace=True) # the depth column is now bad due to the summing operation above, remove it
 accumprox['Depth'] = np.arange(1,len(accumprox)+1)*(-1*baseinterval*dispinterval)  # Make new depth column with corrected values.
+# make a plot of the proxies with depth
+deletethis = labels.pop() # just peel off the Depth label so we can use the rest of the labels for the plots.
+xlabs = ["g/cc", "g/cc", "g/cc", "g/cc", "pieces/cc", "pieces/cc"] # labels for the xaxes in the plot. Need to have same number as there are plots.
+sns.set_style("ticks")
+sns.set_context("poster", font_scale = 1.1)
+
+fig, axes = plt.subplots(nrows=1, ncols=len(labels), sharey=True, sharex=False, figsize=(18, 8)) #make blank plot, and set size
+for color, lab, xlab, ax in zip(sns.cubehelix_palette(len(labels), start=.75, rot=1.5, dark=.25), labels, xlabs, axes):
+    ax.barh(accumprox.Depth, accumprox[lab], height=.09, linewidth=1, color=color)
+    ax.set_title(lab, loc='left')
+    ax.set_xscale(proxyscale)
+    ax.set_xlim(xmin=0)
+    ax.set_ylim([np.amin(accumprox.Depth), 0])
+    ax.set_xlabel(xlab)
+    ax.locator_params(axis='x', nbins=3)
+    ax.patch.set_visible(False)
+    for item in mbsstrat.T[RunLength]:
+        ax.axhline(y=item, xmin=0, xmax=1.5, c='0.75', linewidth=1, zorder=0, clip_on=False)
+        #ax.plot((0, np.amax(accumprox[lab])), (item,item), color='black', linestyle='dashed', linewidth=1, clip_on=False) # plot a horizontal line for modern day surface
+#fig.text(0.5, 0.02, 'Amount of proxy (counts or weights)', ha='center', va='center', fontsize=18)
+fig.text(0.04, 0.5, 'Depth Below Surface (m)', ha='center', va='center', rotation='vertical', fontsize=18)
+fig.subplots_adjust(bottom=0.11, right=0.95, wspace=0.35)
+plt.locator_params(axis = 'y', nbins = len(accumprox))
+#plt.locator_params(axis = 'x', nbins = 4)
+sns.despine()
+plt.savefig("%s_proxies_barplot.png" % outprefix, dpi=300)
+plt.close()
+accumprox.to_csv("%s_binned_proxies.csv" % outprefix) # save out the binned proxies dataframe to csv file
+
+fig, axes = plt.subplots(nrows=1, ncols=3, sharey=True, sharex=False, figsize=(14, 8)) #make blank plot, and set size
+for color, lab, xlab, ax in zip(('yellow','green','blue'), (labels[1],labels[3],labels[4]), (xlabs[1],xlabs[3],xlabs[4]), axes):
+    ax.barh(accumprox.Depth, accumprox[lab], height=.09, linewidth=1, color=color)
+    ax.set_title(lab, loc='left')
+    ax.set_xscale(proxyscale)
+    ax.set_xlim(xmin=0)
+    ax.set_ylim([np.amin(accumprox.Depth), 0])
+    ax.set_xlabel(xlab)
+    ax.locator_params(axis='x', nbins=3)
+    ax.patch.set_visible(False)
+    for item in mbsstrat.T[RunLength]:
+        ax.axhline(y=item, xmin=0, xmax=1.5, c='0.75', linewidth=1, zorder=0, clip_on=False)
+        #ax.plot((0, np.amax(accumprox[lab])), (item,item), color='black', linestyle='dashed', linewidth=1, clip_on=False) # plot a horizontal line for modern day surface
+#fig.text(0.5, 0.02, 'Amount of proxy (counts or weights)', ha='center', va='center', fontsize=18)
+fig.text(0.04, 0.5, 'Depth Below Surface (m)', ha='center', va='center', rotation='vertical', fontsize=18)
+fig.subplots_adjust(bottom=0.11, right=0.95, wspace=0.35)
+plt.locator_params(axis = 'y', nbins = len(accumprox))
+#plt.locator_params(axis = 'x', nbins = 4)
+sns.despine()
+plt.savefig("%s_basav_proxies_barplot.png" % outprefix, dpi=300)
+plt.close()
 accumprox.to_csv("%s_binned_proxies.csv" % outprefix) # save out the binned proxies dataframe to csv file
 
 grass.message("Finished!")
